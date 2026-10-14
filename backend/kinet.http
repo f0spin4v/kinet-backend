@@ -1,0 +1,206 @@
+### =====================================================================
+### Kinet API: pruebas funcionales de los procesos 1 y 2
+### Abrir en IntelliJ y ejecutar cada petición con el botón verde, en orden.
+### Requiere el backend encendido y los scripts de /db ejecutados.
+### =====================================================================
+
+@api = http://localhost:8080/api
+
+### ---------- PROCESO 1: USUARIO Y AUTENTICACIÓN ----------
+
+### 1. Registro (201). Si ya existe, pasa al login.
+POST {{api}}/auth/registro
+Content-Type: application/json
+
+{
+  "nombre": "Jugador Demo",
+  "correo": "demo@kinet.com",
+  "contrasena": "Demo2026",
+  "nickname": "jugador_demo",
+  "aceptaDatos": true
+}
+
+> {% client.global.set("token", response.body.respuesta.token); %}
+
+### 2. Inicio de sesión (200). Guarda el token para las siguientes peticiones.
+POST {{api}}/auth/login
+Content-Type: application/json
+
+{
+  "correo": "demo@kinet.com",
+  "contrasena": "Demo2026"
+}
+
+> {% client.global.set("token", response.body.respuesta.token); %}
+
+### 3. Login con contraseña equivocada (401)
+POST {{api}}/auth/login
+Content-Type: application/json
+
+{
+  "correo": "demo@kinet.com",
+  "contrasena": "Equivocada1"
+}
+
+### 4. Registro con datos inválidos (400, un mensaje por campo)
+POST {{api}}/auth/registro
+Content-Type: application/json
+
+{
+  "nombre": "",
+  "correo": "no-es-correo",
+  "contrasena": "corta",
+  "nickname": "x",
+  "aceptaDatos": false
+}
+
+### 5. Mi perfil (200)
+GET {{api}}/usuarios/me
+Authorization: Bearer {{token}}
+
+### 6. Editar perfil (200)
+PUT {{api}}/usuarios/me
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "nombre": "Jugador Demo",
+  "nickname": "jugador_demo",
+  "avatarUrl": "https://i.pravatar.cc/150?img=12",
+  "fechaNacimiento": "2001-03-15",
+  "ciudad": "Armenia",
+  "deporteFavorito": "Running"
+}
+
+### 7. Preguntas de la evaluación de nivel (200)
+GET {{api}}/evaluacion/preguntas
+Authorization: Bearer {{token}}
+
+### 8. Enviar evaluación (201): 3 respuestas B = Intermedio. Solo se puede una vez (409 la segunda).
+POST {{api}}/evaluacion
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "respuestas": ["B", "B", "A", "B", "A"]
+}
+
+### 9. Pedir enlace de recuperación (200). Sin correo configurado, el enlace sale en la consola del backend.
+POST {{api}}/auth/recuperar-contrasena
+Content-Type: application/json
+
+{
+  "correo": "demo@kinet.com"
+}
+
+### 10. Restablecer contraseña: pegar el token del enlace (200, o 400 si no es válido)
+POST {{api}}/auth/restablecer-contrasena
+Content-Type: application/json
+
+{
+  "token": "PEGAR_AQUI_EL_TOKEN_DEL_ENLACE",
+  "nuevaContrasena": "Demo2026"
+}
+
+### 11. Sin token (401)
+GET {{api}}/usuarios/me
+
+### ---------- PROCESO 2: ENTRENAMIENTOS Y RETOS ----------
+
+### 12. Tipos de actividad (200)
+GET {{api}}/actividades
+Authorization: Bearer {{token}}
+
+### 13. Retos de mi nivel (200)
+GET {{api}}/retos
+Authorization: Bearer {{token}}
+
+### 14. Unirme al reto 1 "Primer paso" (201)
+POST {{api}}/retos/1/participaciones
+Authorization: Bearer {{token}}
+
+### 15. Unirme al reto 2 "Misión diaria" (201)
+POST {{api}}/retos/2/participaciones
+Authorization: Bearer {{token}}
+
+### 16. Registrar entrenamiento válido (201, VALIDADO). Empezó hace una hora y duró 40 minutos.
+< {%
+    // hora de Colombia (UTC-5) menos una hora, en formato 2026-10-12T07:30:00
+    const inicio = new Date(Date.now() - 6 * 60 * 60 * 1000);
+    request.variables.set("inicio", inicio.toISOString().substring(0, 19));
+%}
+POST {{api}}/entrenamientos
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "codigoActividad": "RUNNING",
+  "duracionMinutos": 40,
+  "intensidad": "MEDIA",
+  "fechaInicio": "{{inicio}}"
+}
+
+### 17. Entrenamiento rechazado por el anti-trampa: dura menos de 10 minutos (201, RECHAZADO)
+POST {{api}}/entrenamientos
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "codigoActividad": "GIMNASIO",
+  "duracionMinutos": 5,
+  "intensidad": "ALTA",
+  "fechaInicio": "2026-10-12T06:00:00"
+}
+
+### 18. Mi historial (200)
+GET {{api}}/entrenamientos
+Authorization: Bearer {{token}}
+
+### 19. Dashboard: XP, nivel, racha y semana (200)
+GET {{api}}/progreso
+Authorization: Bearer {{token}}
+
+### 20. Mis retos y su avance (200)
+GET {{api}}/retos/mios
+Authorization: Bearer {{token}}
+
+### 21. Detalle de un reto (200)
+GET {{api}}/retos/1
+Authorization: Bearer {{token}}
+
+### 22. Mis notificaciones (200)
+GET {{api}}/notificaciones
+Authorization: Bearer {{token}}
+
+### ---------- ADMINISTRACIÓN (admin@kinet.com / Admin2026) ----------
+
+### 23. Login del administrador
+POST {{api}}/auth/login
+Content-Type: application/json
+
+{
+  "correo": "admin@kinet.com",
+  "contrasena": "Admin2026"
+}
+
+> {% client.global.set("tokenAdmin", response.body.respuesta.token); %}
+
+### 24. Crear un reto (201)
+POST {{api}}/admin/retos
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
+
+{
+  "titulo": "Nadador constante",
+  "descripcion": "Nada 3 veces esta semana.",
+  "tipoMeta": "SESIONES",
+  "metaValor": 3,
+  "codigoActividad": "NATACION",
+  "nivelRequerido": null,
+  "duracionDias": 7,
+  "xpRecompensa": 70
+}
+
+### 25. Un jugador no puede entrar a administración (403)
+GET {{api}}/admin/retos
+Authorization: Bearer {{token}}
