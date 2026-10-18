@@ -1,0 +1,667 @@
+/* =====================================================================
+   KINET - Script de creación de base de datos (Oracle 12c+ / 19c / 21c / XE)
+   Modelo: MER lógico normalizado 3FN
+   Ejecutar como SYS / SYSDBA, conectado al PDB (ej: ALTER SESSION SET CONTAINER = XEPDB1;)
+   Secciones:
+     1. Tablespaces
+     2. Perfil, usuarios y roles
+     3. Tablas (esquema KINET_OWNER)
+     4. Índices
+     5. Triggers, vistas
+     6. Datos semilla
+     7. Permisos y sinónimos
+   IMPORTANTE: cambiar las contraseñas antes de ejecutar.
+   ===================================================================== */
+
+SET DEFINE OFF
+SET SQLBLANKLINES ON
+SET SERVEROUTPUT ON
+WHENEVER SQLERROR CONTINUE
+
+/* =====================================================================
+   0. LIMPIEZA (permite re-ejecutar el script completo desde cero)
+   ===================================================================== */
+BEGIN
+  FOR u IN (SELECT username FROM dba_users
+            WHERE username IN ('KINET_OWNER','KINET_APP','KINET_READER','KINET_ADMIN')) LOOP
+    FOR s IN (SELECT sid, serial# FROM v$session WHERE username = u.username) LOOP
+      BEGIN
+        EXECUTE IMMEDIATE 'ALTER SYSTEM KILL SESSION ''' || s.sid || ',' || s.serial# || ''' IMMEDIATE';
+      EXCEPTION WHEN OTHERS THEN NULL;
+      END;
+    END LOOP;
+    EXECUTE IMMEDIATE 'DROP USER ' || u.username || ' CASCADE';
+  END LOOP;
+  FOR r IN (SELECT role FROM dba_roles
+            WHERE role IN ('ROL_KINET_OWNER','ROL_KINET_APP','ROL_KINET_READER','ROL_KINET_ADMIN')) LOOP
+    EXECUTE IMMEDIATE 'DROP ROLE ' || r.role;
+  END LOOP;
+  FOR p IN (SELECT profile FROM dba_profiles WHERE profile = 'KINET_PROFILE' AND ROWNUM = 1) LOOP
+    EXECUTE IMMEDIATE 'DROP PROFILE KINET_PROFILE CASCADE';
+  END LOOP;
+  FOR t IN (SELECT tablespace_name FROM dba_tablespaces
+            WHERE tablespace_name IN ('KINET_DATA','KINET_IDX')) LOOP
+    EXECUTE IMMEDIATE 'DROP TABLESPACE ' || t.tablespace_name || ' INCLUDING CONTENTS AND DATAFILES';
+  END LOOP;
+END;
+/
+
+/* =====================================================================
+   1. TABLESPACES
+   (Usa Oracle Managed Files; si db_create_file_dest no está definido,
+    agregar la ruta: DATAFILE '/ruta/kinet_data01.dbf' SIZE 200M ...)
+   ===================================================================== */
+CREATE TABLESPACE kinet_data
+  DATAFILE SIZE 200M AUTOEXTEND ON NEXT 50M MAXSIZE UNLIMITED
+  EXTENT MANAGEMENT LOCAL SEGMENT SPACE MANAGEMENT AUTO;
+
+CREATE TABLESPACE kinet_idx
+  DATAFILE SIZE 100M AUTOEXTEND ON NEXT 25M MAXSIZE UNLIMITED
+  EXTENT MANAGEMENT LOCAL SEGMENT SPACE MANAGEMENT AUTO;
+
+/* =====================================================================
+   2. PERFIL, USUARIOS Y ROLES
+   ===================================================================== */
+CREATE PROFILE kinet_profile LIMIT
+  FAILED_LOGIN_ATTEMPTS   5
+  PASSWORD_LOCK_TIME      1/24
+  PASSWORD_LIFE_TIME      180
+  PASSWORD_REUSE_TIME     365
+  PASSWORD_REUSE_MAX      5
+  SESSIONS_PER_USER       20
+  IDLE_TIME               60;
+
+-- Dueño del esquema (no se usa desde la aplicación)
+CREATE USER kinet_owner IDENTIFIED BY "Cambiar_Owner#2026"
+  DEFAULT TABLESPACE kinet_data
+  TEMPORARY TABLESPACE temp
+  QUOTA UNLIMITED ON kinet_data
+  QUOTA UNLIMITED ON kinet_idx
+  PROFILE kinet_profile;
+
+-- Usuario de la aplicación (backend)
+CREATE USER kinet_app IDENTIFIED BY "Cambiar_App#2026"
+  DEFAULT TABLESPACE kinet_data
+  TEMPORARY TABLESPACE temp
+  PROFILE kinet_profile;
+
+-- Usuario de solo lectura (reportes / BI)
+CREATE USER kinet_reader IDENTIFIED BY "Cambiar_Read#2026"
+  DEFAULT TABLESPACE kinet_data
+  TEMPORARY TABLESPACE temp
+  PROFILE kinet_profile;
+
+-- Usuario administrador de la BD KINET (DBA funcional)
+CREATE USER kinet_admin IDENTIFIED BY "Cambiar_Admin#2026"
+  DEFAULT TABLESPACE kinet_data
+  TEMPORARY TABLESPACE temp
+  QUOTA UNLIMITED ON kinet_data
+  PROFILE kinet_profile;
+
+-- Roles
+CREATE ROLE rol_kinet_owner;
+CREATE ROLE rol_kinet_app;
+CREATE ROLE rol_kinet_reader;
+CREATE ROLE rol_kinet_admin;
+
+-- Privilegios de sistema
+GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE SEQUENCE,
+      CREATE TRIGGER, CREATE PROCEDURE, CREATE SYNONYM, CREATE TYPE
+  TO rol_kinet_owner;
+GRANT CREATE SESSION TO rol_kinet_app;
+GRANT CREATE SESSION TO rol_kinet_reader;
+GRANT CREATE SESSION, CREATE SYNONYM TO rol_kinet_admin;
+
+GRANT rol_kinet_owner  TO kinet_owner;
+GRANT rol_kinet_app    TO kinet_app;
+GRANT rol_kinet_reader TO kinet_reader;
+GRANT rol_kinet_admin  TO kinet_admin;
+
+-- Las tablas se crean en el esquema KINET_OWNER desde esta sesión
+ALTER SESSION SET CURRENT_SCHEMA = kinet_owner;
+
+/* =====================================================================
+   3. TABLAS
+   ===================================================================== */
+
+/* ---------- USUARIOS Y AUTENTICACIÓN ---------- */
+
+CREATE TABLE usuario (
+  id_usuario        NUMBER GENERATED ALWAYS AS IDENTITY,
+  nombre            VARCHAR2(100)  NOT NULL,
+  apellido          VARCHAR2(100)  NOT NULL,
+  correo            VARCHAR2(150)  NOT NULL,   -- UQ
+  password_hash     VARCHAR2(255)  NOT NULL,
+  fecha_nacimiento  DATE,   -- ? opcional (NULL)
+  fecha_registro    TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  estado            VARCHAR2(20) DEFAULT 'ACTIVO' NOT NULL,
+  foto_perfil       VARCHAR2(500),   -- ? opcional (NULL)
+  CONSTRAINT pk_usuario PRIMARY KEY (id_usuario) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT uq_usuario_correo UNIQUE (correo) USING INDEX TABLESPACE kinet_idx,   -- UQ (MER)
+  CONSTRAINT ck_usuario_estado CHECK (estado IN ('ACTIVO','INACTIVO','SUSPENDIDO','ELIMINADO')),
+  CONSTRAINT ck_usuario_correo CHECK (INSTR(correo,'@') > 1)
+) TABLESPACE kinet_data;
+
+CREATE TABLE rol (
+  id_rol       NUMBER GENERATED ALWAYS AS IDENTITY,
+  nombre       VARCHAR2(50)  NOT NULL,   -- UQ
+  descripcion  VARCHAR2(255),   -- ? opcional (NULL)
+  CONSTRAINT pk_rol PRIMARY KEY (id_rol) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT uq_rol_nombre UNIQUE (nombre) USING INDEX TABLESPACE kinet_idx   -- UQ (MER)
+) TABLESPACE kinet_data;
+
+CREATE TABLE usuario_rol (
+  id_usuario       NUMBER NOT NULL,
+  id_rol           NUMBER NOT NULL,
+  fecha_asignacion TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  CONSTRAINT pk_usuario_rol PRIMARY KEY (id_usuario, id_rol) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT fk_usrol_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario),
+  CONSTRAINT fk_usrol_rol     FOREIGN KEY (id_rol)     REFERENCES rol (id_rol)
+) TABLESPACE kinet_data;
+
+CREATE TABLE recuperacion_cuenta (
+  id_recuperacion  NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_usuario       NUMBER NOT NULL,
+  token_hash       VARCHAR2(255) NOT NULL,   -- UQ
+  fecha_solicitud  TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  fecha_expiracion TIMESTAMP NOT NULL,
+  fecha_uso        TIMESTAMP,   -- ? opcional (NULL)
+  estado           VARCHAR2(20) DEFAULT 'PENDIENTE' NOT NULL,
+  CONSTRAINT pk_recuperacion PRIMARY KEY (id_recuperacion) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT uq_recuperacion_token UNIQUE (token_hash) USING INDEX TABLESPACE kinet_idx,   -- UQ (MER)
+  CONSTRAINT fk_recup_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario),
+  CONSTRAINT ck_recup_estado CHECK (estado IN ('PENDIENTE','USADO','EXPIRADO','CANCELADO')),
+  CONSTRAINT ck_recup_fechas CHECK (fecha_expiracion > fecha_solicitud)
+) TABLESPACE kinet_data;
+
+CREATE TABLE evaluacion_nivel (
+  id_evaluacion     NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_usuario        NUMBER NOT NULL,
+  fecha_evaluacion  TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  nivel_estimado    VARCHAR2(50) NOT NULL,
+  puntuacion        NUMBER(6,2),   -- ? opcional (NULL)
+  observaciones     VARCHAR2(1000),   -- ? opcional (NULL)
+  CONSTRAINT pk_evaluacion_nivel PRIMARY KEY (id_evaluacion) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT fk_evnivel_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario),
+  CONSTRAINT ck_evnivel_punt CHECK (puntuacion IS NULL OR puntuacion >= 0)
+) TABLESPACE kinet_data;
+
+/* ---------- MISIONES, RETOS Y PROGRESO ---------- */
+
+CREATE TABLE mision (
+  id_mision       NUMBER GENERATED ALWAYS AS IDENTITY,
+  nombre          VARCHAR2(120) NOT NULL,
+  descripcion     VARCHAR2(500) NOT NULL,
+  tipo_objetivo   VARCHAR2(50)  NOT NULL,
+  valor_objetivo  NUMBER(12,2)  NOT NULL,
+  recompensa_xp   NUMBER(10)    NOT NULL,
+  fecha_inicio    TIMESTAMP     NOT NULL,
+  fecha_fin       TIMESTAMP     NOT NULL,
+  estado          VARCHAR2(20)  DEFAULT 'ACTIVA' NOT NULL,
+  CONSTRAINT pk_mision PRIMARY KEY (id_mision) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT ck_mision_valor  CHECK (valor_objetivo > 0),
+  CONSTRAINT ck_mision_xp     CHECK (recompensa_xp >= 0),
+  CONSTRAINT ck_mision_fechas CHECK (fecha_fin >= fecha_inicio),
+  CONSTRAINT ck_mision_estado CHECK (estado IN ('ACTIVA','INACTIVA','FINALIZADA'))
+) TABLESPACE kinet_data;
+
+CREATE TABLE usuario_mision (
+  id_usuario_mision NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_usuario        NUMBER NOT NULL,
+  id_mision         NUMBER NOT NULL,
+  progreso_actual   NUMBER(12,2) DEFAULT 0 NOT NULL,
+  fecha_asignacion  TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  fecha_completada  TIMESTAMP,   -- ? opcional (NULL)
+  estado            VARCHAR2(20) DEFAULT 'EN_PROGRESO' NOT NULL,
+  CONSTRAINT pk_usuario_mision PRIMARY KEY (id_usuario_mision) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT uq_usuario_mision UNIQUE (id_usuario, id_mision) USING INDEX TABLESPACE kinet_idx,   -- UQ (MER)
+  CONSTRAINT fk_usmis_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario),
+  CONSTRAINT fk_usmis_mision  FOREIGN KEY (id_mision)  REFERENCES mision (id_mision),
+  CONSTRAINT ck_usmis_prog    CHECK (progreso_actual >= 0),
+  CONSTRAINT ck_usmis_estado  CHECK (estado IN ('EN_PROGRESO','COMPLETADA','EXPIRADA','ABANDONADA'))
+) TABLESPACE kinet_data;
+
+CREATE TABLE reto (
+  id_reto         NUMBER GENERATED ALWAYS AS IDENTITY,
+  nombre          VARCHAR2(120) NOT NULL,
+  descripcion     VARCHAR2(500) NOT NULL,
+  tipo_objetivo   VARCHAR2(50)  NOT NULL,
+  valor_objetivo  NUMBER(12,2)  NOT NULL,
+  recompensa_xp   NUMBER(10)    NOT NULL,
+  fecha_inicio    TIMESTAMP     NOT NULL,
+  fecha_fin       TIMESTAMP     NOT NULL,
+  estado          VARCHAR2(20)  DEFAULT 'ACTIVO' NOT NULL,
+  CONSTRAINT pk_reto PRIMARY KEY (id_reto) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT ck_reto_valor  CHECK (valor_objetivo > 0),
+  CONSTRAINT ck_reto_xp     CHECK (recompensa_xp >= 0),
+  CONSTRAINT ck_reto_fechas CHECK (fecha_fin >= fecha_inicio),
+  CONSTRAINT ck_reto_estado CHECK (estado IN ('ACTIVO','INACTIVO','FINALIZADO'))
+) TABLESPACE kinet_data;
+
+CREATE TABLE usuario_reto (
+  id_usuario_reto   NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_usuario        NUMBER NOT NULL,
+  id_reto           NUMBER NOT NULL,
+  progreso_actual   NUMBER(12,2) DEFAULT 0 NOT NULL,
+  fecha_participacion TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  fecha_completada  TIMESTAMP,   -- ? opcional (NULL)
+  estado            VARCHAR2(20) DEFAULT 'EN_PROGRESO' NOT NULL,
+  CONSTRAINT pk_usuario_reto PRIMARY KEY (id_usuario_reto) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT uq_usuario_reto UNIQUE (id_usuario, id_reto) USING INDEX TABLESPACE kinet_idx,   -- UQ (MER)
+  CONSTRAINT fk_usret_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario),
+  CONSTRAINT fk_usret_reto    FOREIGN KEY (id_reto)    REFERENCES reto (id_reto),
+  CONSTRAINT ck_usret_prog    CHECK (progreso_actual >= 0),
+  CONSTRAINT ck_usret_estado  CHECK (estado IN ('EN_PROGRESO','COMPLETADO','EXPIRADO','ABANDONADO'))
+) TABLESPACE kinet_data;
+
+/* ---------- NOTIFICACIONES ---------- */
+
+CREATE TABLE notificacion (
+  id_notificacion NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_usuario      NUMBER NOT NULL,
+  tipo            VARCHAR2(50)  NOT NULL,
+  titulo          VARCHAR2(150) NOT NULL,
+  mensaje         VARCHAR2(1000) NOT NULL,
+  fecha_creacion  TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  fecha_lectura   TIMESTAMP,   -- ? opcional (NULL)
+  estado_envio    VARCHAR2(20) DEFAULT 'PENDIENTE' NOT NULL,
+  canal           VARCHAR2(20) DEFAULT 'PUSH' NOT NULL,
+  CONSTRAINT pk_notificacion PRIMARY KEY (id_notificacion) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT fk_notif_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario),
+  CONSTRAINT ck_notif_envio CHECK (estado_envio IN ('PENDIENTE','ENVIADA','FALLIDA')),
+  CONSTRAINT ck_notif_canal CHECK (canal IN ('PUSH','EMAIL','SMS','IN_APP'))
+) TABLESPACE kinet_data;
+
+/* ---------- ENTRENAMIENTOS, INTEGRACIONES Y XP ---------- */
+
+CREATE TABLE tipo_actividad (
+  id_tipo_actividad NUMBER GENERATED ALWAYS AS IDENTITY,
+  nombre            VARCHAR2(80) NOT NULL,   -- UQ
+  descripcion       VARCHAR2(255),   -- ? opcional (NULL)
+  estado            VARCHAR2(20) DEFAULT 'ACTIVO' NOT NULL,
+  CONSTRAINT pk_tipo_actividad PRIMARY KEY (id_tipo_actividad) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT uq_tipo_actividad_nombre UNIQUE (nombre) USING INDEX TABLESPACE kinet_idx,   -- UQ (MER)
+  CONSTRAINT ck_tipoact_estado CHECK (estado IN ('ACTIVO','INACTIVO'))
+) TABLESPACE kinet_data;
+
+CREATE TABLE proveedor_externo (
+  id_proveedor NUMBER GENERATED ALWAYS AS IDENTITY,
+  nombre       VARCHAR2(80) NOT NULL,   -- UQ
+  estado       VARCHAR2(20) DEFAULT 'ACTIVO' NOT NULL,
+  CONSTRAINT pk_proveedor_externo PRIMARY KEY (id_proveedor) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT uq_proveedor_nombre UNIQUE (nombre) USING INDEX TABLESPACE kinet_idx,   -- UQ (MER)
+  CONSTRAINT ck_proveedor_estado CHECK (estado IN ('ACTIVO','INACTIVO'))
+) TABLESPACE kinet_data;
+
+CREATE TABLE integracion_usuario (
+  id_integracion         NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_usuario             NUMBER NOT NULL,
+  id_proveedor           NUMBER NOT NULL,
+  identificador_externo  VARCHAR2(150),   -- ? opcional (NULL)
+  token_cifrado          VARCHAR2(2000),   -- ? opcional (NULL)
+  fecha_vinculacion      TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  estado                 VARCHAR2(20) DEFAULT 'VINCULADA' NOT NULL,
+  CONSTRAINT pk_integracion_usuario PRIMARY KEY (id_integracion) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT fk_integ_usuario   FOREIGN KEY (id_usuario)   REFERENCES usuario (id_usuario),
+  CONSTRAINT fk_integ_proveedor FOREIGN KEY (id_proveedor) REFERENCES proveedor_externo (id_proveedor),
+  CONSTRAINT ck_integ_estado CHECK (estado IN ('VINCULADA','DESVINCULADA','ERROR'))
+) TABLESPACE kinet_data;
+
+CREATE TABLE racha (
+  id_racha              NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_usuario            NUMBER NOT NULL,   -- UQ
+  dias_actuales         NUMBER(5) DEFAULT 0 NOT NULL,
+  mejor_racha           NUMBER(5) DEFAULT 0 NOT NULL,
+  ultima_fecha_actividad DATE,   -- ? opcional (NULL)
+  CONSTRAINT pk_racha PRIMARY KEY (id_racha) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT uq_racha_usuario UNIQUE (id_usuario) USING INDEX TABLESPACE kinet_idx,   -- relación 1:0..1
+  CONSTRAINT fk_racha_usuario FOREIGN KEY (id_usuario) REFERENCES usuario (id_usuario),
+  CONSTRAINT ck_racha_dias CHECK (dias_actuales >= 0 AND mejor_racha >= dias_actuales)
+) TABLESPACE kinet_data;
+
+CREATE TABLE entrenamiento (
+  id_entrenamiento   NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_usuario         NUMBER NOT NULL,
+  id_tipo_actividad  NUMBER NOT NULL,
+  id_integracion     NUMBER,   -- ? opcional (NULL)
+  fecha_inicio       TIMESTAMP NOT NULL,
+  fecha_fin          TIMESTAMP NOT NULL,
+  duracion_segundos  NUMBER(10) NOT NULL,
+  intensidad         VARCHAR2(20) NOT NULL,
+  distancia_metros   NUMBER(12,2),   -- ? opcional (NULL)
+  evidencia_url      VARCHAR2(500),   -- ? opcional (NULL)
+  estado_validacion  VARCHAR2(20) DEFAULT 'PENDIENTE' NOT NULL,
+  motivo_rechazo     VARCHAR2(500),   -- ? opcional (NULL)
+  fecha_registro     TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  CONSTRAINT pk_entrenamiento PRIMARY KEY (id_entrenamiento) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT fk_entren_usuario   FOREIGN KEY (id_usuario)        REFERENCES usuario (id_usuario),
+  CONSTRAINT fk_entren_tipo      FOREIGN KEY (id_tipo_actividad) REFERENCES tipo_actividad (id_tipo_actividad),
+  CONSTRAINT fk_entren_integ     FOREIGN KEY (id_integracion)    REFERENCES integracion_usuario (id_integracion),
+  CONSTRAINT ck_entren_fechas    CHECK (fecha_fin >= fecha_inicio),
+  CONSTRAINT ck_entren_duracion  CHECK (duracion_segundos > 0),
+  CONSTRAINT ck_entren_distancia CHECK (distancia_metros IS NULL OR distancia_metros >= 0),
+  CONSTRAINT ck_entren_intens    CHECK (intensidad IN ('BAJA','MEDIA','ALTA','MUY_ALTA')),
+  CONSTRAINT ck_entren_valid     CHECK (estado_validacion IN ('PENDIENTE','VALIDADO','RECHAZADO')),
+  CONSTRAINT ck_entren_rechazo   CHECK (estado_validacion <> 'RECHAZADO' OR motivo_rechazo IS NOT NULL)
+) TABLESPACE kinet_data;
+
+CREATE TABLE movimiento_xp (
+  id_movimiento_xp  NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_usuario        NUMBER NOT NULL,
+  id_entrenamiento  NUMBER,   -- ? opcional (NULL)
+  id_usuario_mision NUMBER,   -- ? opcional (NULL)
+  id_usuario_reto   NUMBER,   -- ? opcional (NULL)
+  cantidad_xp       NUMBER(10) NOT NULL,      -- (+/-)
+  motivo            VARCHAR2(255) NOT NULL,
+  fecha_registro    TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  CONSTRAINT pk_movimiento_xp PRIMARY KEY (id_movimiento_xp) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT fk_movxp_usuario FOREIGN KEY (id_usuario)        REFERENCES usuario (id_usuario),
+  CONSTRAINT fk_movxp_entren  FOREIGN KEY (id_entrenamiento)  REFERENCES entrenamiento (id_entrenamiento),
+  CONSTRAINT fk_movxp_usmis   FOREIGN KEY (id_usuario_mision) REFERENCES usuario_mision (id_usuario_mision),
+  CONSTRAINT fk_movxp_usret   FOREIGN KEY (id_usuario_reto)   REFERENCES usuario_reto (id_usuario_reto),
+  CONSTRAINT ck_movxp_cant    CHECK (cantidad_xp <> 0),
+  -- a lo sumo un origen por movimiento
+  CONSTRAINT ck_movxp_origen  CHECK (
+    (CASE WHEN id_entrenamiento  IS NOT NULL THEN 1 ELSE 0 END +
+     CASE WHEN id_usuario_mision IS NOT NULL THEN 1 ELSE 0 END +
+     CASE WHEN id_usuario_reto   IS NOT NULL THEN 1 ELSE 0 END) <= 1)
+) TABLESPACE kinet_data;
+
+/* ---------- LIGAS, TEMPORADAS, RANGOS Y MATCHMAKING ---------- */
+
+CREATE TABLE liga (
+  id_liga      NUMBER GENERATED ALWAYS AS IDENTITY,
+  nombre       VARCHAR2(80) NOT NULL,   -- UQ
+  descripcion  VARCHAR2(255),   -- ? opcional (NULL)
+  estado       VARCHAR2(20) DEFAULT 'ACTIVA' NOT NULL,
+  CONSTRAINT pk_liga PRIMARY KEY (id_liga) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT uq_liga_nombre UNIQUE (nombre) USING INDEX TABLESPACE kinet_idx,   -- UQ (MER)
+  CONSTRAINT ck_liga_estado CHECK (estado IN ('ACTIVA','INACTIVA'))
+) TABLESPACE kinet_data;
+
+CREATE TABLE temporada (
+  id_temporada      NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_liga           NUMBER NOT NULL,
+  nombre            VARCHAR2(100) NOT NULL,
+  fecha_inicio      TIMESTAMP NOT NULL,
+  fecha_fin         TIMESTAMP NOT NULL,
+  reglas_temporada  VARCHAR2(2000),   -- ? opcional (NULL)
+  estado            VARCHAR2(20) DEFAULT 'PROGRAMADA' NOT NULL,
+  CONSTRAINT pk_temporada PRIMARY KEY (id_temporada) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT fk_temp_liga FOREIGN KEY (id_liga) REFERENCES liga (id_liga),
+  CONSTRAINT ck_temp_fechas CHECK (fecha_fin > fecha_inicio),
+  CONSTRAINT ck_temp_estado CHECK (estado IN ('PROGRAMADA','ACTIVA','FINALIZADA','CANCELADA'))
+) TABLESPACE kinet_data;
+
+CREATE TABLE rango (
+  id_rango   NUMBER GENERATED ALWAYS AS IDENTITY,
+  nombre     VARCHAR2(50) NOT NULL,   -- UQ
+  nivel      NUMBER(3)    NOT NULL,   -- UQ
+  xp_minimo  NUMBER(10)   NOT NULL,
+  xp_maximo  NUMBER(10)   NOT NULL,
+  CONSTRAINT pk_rango PRIMARY KEY (id_rango) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT uq_rango_nombre UNIQUE (nombre) USING INDEX TABLESPACE kinet_idx,   -- UQ (MER)
+  CONSTRAINT uq_rango_nivel  UNIQUE (nivel)  USING INDEX TABLESPACE kinet_idx,   -- UQ (MER)
+  CONSTRAINT ck_rango_xp CHECK (xp_minimo >= 0 AND xp_maximo >= xp_minimo)
+) TABLESPACE kinet_data;
+
+CREATE TABLE participacion_temporada (
+  id_participacion  NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_usuario        NUMBER NOT NULL,
+  id_temporada      NUMBER NOT NULL,
+  id_rango          NUMBER NOT NULL,
+  xp_temporada      NUMBER(12) DEFAULT 0 NOT NULL,
+  posicion_actual   NUMBER(8),   -- ? opcional (NULL)
+  fecha_ingreso     TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  estado            VARCHAR2(20) DEFAULT 'ACTIVA' NOT NULL,
+  CONSTRAINT pk_participacion_temporada PRIMARY KEY (id_participacion) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT uq_particip_usr_temp UNIQUE (id_usuario, id_temporada) USING INDEX TABLESPACE kinet_idx,   -- UQ (MER)
+  CONSTRAINT fk_partemp_usuario   FOREIGN KEY (id_usuario)   REFERENCES usuario (id_usuario),
+  CONSTRAINT fk_partemp_temporada FOREIGN KEY (id_temporada) REFERENCES temporada (id_temporada),
+  CONSTRAINT fk_partemp_rango     FOREIGN KEY (id_rango)     REFERENCES rango (id_rango),
+  CONSTRAINT ck_partemp_xp   CHECK (xp_temporada >= 0),
+  CONSTRAINT ck_partemp_pos  CHECK (posicion_actual IS NULL OR posicion_actual > 0),
+  CONSTRAINT ck_partemp_est  CHECK (estado IN ('ACTIVA','FINALIZADA','ABANDONADA','DESCALIFICADA'))
+) TABLESPACE kinet_data;
+
+CREATE TABLE historial_rango (
+  id_historial_rango NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_participacion   NUMBER NOT NULL,
+  id_rango_anterior  NUMBER,   -- ? opcional (NULL)
+  id_rango_nuevo     NUMBER NOT NULL,
+  fecha_cambio       TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  motivo             VARCHAR2(255),   -- ? opcional (NULL)
+  CONSTRAINT pk_historial_rango PRIMARY KEY (id_historial_rango) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT fk_histr_partic  FOREIGN KEY (id_participacion)  REFERENCES participacion_temporada (id_participacion),
+  CONSTRAINT fk_histr_anterior FOREIGN KEY (id_rango_anterior) REFERENCES rango (id_rango),
+  CONSTRAINT fk_histr_nuevo    FOREIGN KEY (id_rango_nuevo)    REFERENCES rango (id_rango)
+) TABLESPACE kinet_data;
+
+CREATE TABLE competencia (
+  id_competencia   NUMBER GENERATED ALWAYS AS IDENTITY,
+  id_temporada     NUMBER NOT NULL,
+  fecha_creacion   TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+  fecha_inicio     TIMESTAMP,   -- ? opcional (NULL)
+  estado           VARCHAR2(20) DEFAULT 'PENDIENTE' NOT NULL,
+  tipo_competencia VARCHAR2(30) NOT NULL,
+  CONSTRAINT pk_competencia PRIMARY KEY (id_competencia) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT fk_comp_temporada FOREIGN KEY (id_temporada) REFERENCES temporada (id_temporada),
+  CONSTRAINT ck_comp_estado CHECK (estado IN ('PENDIENTE','EN_CURSO','FINALIZADA','CANCELADA')),
+  CONSTRAINT ck_comp_tipo   CHECK (tipo_competencia IN ('DUELO','GRUPAL','TORNEO'))
+) TABLESPACE kinet_data;
+
+CREATE TABLE participante_competencia (
+  id_competencia   NUMBER NOT NULL,
+  id_usuario       NUMBER NOT NULL,
+  resultado        VARCHAR2(20),   -- ? opcional (NULL)
+  puntuacion       NUMBER(10,2),   -- ? opcional (NULL)
+  fecha_respuesta  TIMESTAMP,   -- ? opcional (NULL)
+  CONSTRAINT pk_participante_competencia PRIMARY KEY (id_competencia, id_usuario) USING INDEX TABLESPACE kinet_idx,
+  CONSTRAINT fk_partcomp_comp    FOREIGN KEY (id_competencia) REFERENCES competencia (id_competencia),
+  CONSTRAINT fk_partcomp_usuario FOREIGN KEY (id_usuario)     REFERENCES usuario (id_usuario),
+  CONSTRAINT ck_partcomp_result  CHECK (resultado IS NULL OR resultado IN ('GANADOR','PERDEDOR','EMPATE','PENDIENTE','RECHAZADO'))
+) TABLESPACE kinet_data;
+
+/* =====================================================================
+   4. ÍNDICES (sobre FKs y consultas frecuentes)
+   ===================================================================== */
+CREATE INDEX ix_usrol_rol         ON usuario_rol (id_rol)                         TABLESPACE kinet_idx;
+CREATE INDEX ix_recup_usuario     ON recuperacion_cuenta (id_usuario)             TABLESPACE kinet_idx;
+CREATE INDEX ix_evnivel_usuario   ON evaluacion_nivel (id_usuario, fecha_evaluacion) TABLESPACE kinet_idx;
+CREATE INDEX ix_usmis_mision      ON usuario_mision (id_mision)                   TABLESPACE kinet_idx;
+CREATE INDEX ix_usret_reto        ON usuario_reto (id_reto)                       TABLESPACE kinet_idx;
+CREATE INDEX ix_notif_usuario     ON notificacion (id_usuario, fecha_creacion)    TABLESPACE kinet_idx;
+CREATE INDEX ix_integ_proveedor   ON integracion_usuario (id_proveedor)           TABLESPACE kinet_idx;
+CREATE INDEX ix_entren_usuario    ON entrenamiento (id_usuario, fecha_inicio)     TABLESPACE kinet_idx;
+CREATE INDEX ix_entren_tipo       ON entrenamiento (id_tipo_actividad)            TABLESPACE kinet_idx;
+CREATE INDEX ix_entren_integ      ON entrenamiento (id_integracion)               TABLESPACE kinet_idx;
+CREATE INDEX ix_movxp_usuario     ON movimiento_xp (id_usuario, fecha_registro)   TABLESPACE kinet_idx;
+CREATE INDEX ix_movxp_entren      ON movimiento_xp (id_entrenamiento)             TABLESPACE kinet_idx;
+CREATE INDEX ix_movxp_usmis       ON movimiento_xp (id_usuario_mision)            TABLESPACE kinet_idx;
+CREATE INDEX ix_movxp_usret       ON movimiento_xp (id_usuario_reto)              TABLESPACE kinet_idx;
+CREATE INDEX ix_temp_liga         ON temporada (id_liga)                          TABLESPACE kinet_idx;
+CREATE INDEX ix_partemp_temporada ON participacion_temporada (id_temporada, xp_temporada DESC) TABLESPACE kinet_idx;
+CREATE INDEX ix_partemp_rango     ON participacion_temporada (id_rango)           TABLESPACE kinet_idx;
+CREATE INDEX ix_histr_partic      ON historial_rango (id_participacion)           TABLESPACE kinet_idx;
+CREATE INDEX ix_histr_anterior    ON historial_rango (id_rango_anterior)          TABLESPACE kinet_idx;
+CREATE INDEX ix_histr_nuevo       ON historial_rango (id_rango_nuevo)             TABLESPACE kinet_idx;
+CREATE INDEX ix_comp_temporada    ON competencia (id_temporada)                   TABLESPACE kinet_idx;
+CREATE INDEX ix_partcomp_usuario  ON participante_competencia (id_usuario)        TABLESPACE kinet_idx;
+
+/* =====================================================================
+   5. TRIGGERS Y VISTAS
+   ===================================================================== */
+
+-- Mantiene la mejor racha y el límite de dias_actuales
+CREATE OR REPLACE TRIGGER trg_racha_mejor
+BEFORE INSERT OR UPDATE ON racha
+FOR EACH ROW
+BEGIN
+  IF :NEW.dias_actuales > :NEW.mejor_racha THEN
+    :NEW.mejor_racha := :NEW.dias_actuales;
+  END IF;
+END;
+/
+
+-- Registra el historial de cambio de rango automáticamente
+CREATE OR REPLACE TRIGGER trg_hist_rango
+AFTER UPDATE OF id_rango ON participacion_temporada
+FOR EACH ROW
+WHEN (OLD.id_rango <> NEW.id_rango)
+BEGIN
+  INSERT INTO historial_rango (id_participacion, id_rango_anterior, id_rango_nuevo, motivo)
+  VALUES (:NEW.id_participacion, :OLD.id_rango, :NEW.id_rango, 'Cambio de rango por XP de temporada');
+END;
+/
+
+-- Vista pública de usuario (sin password_hash) para reportes
+CREATE OR REPLACE VIEW v_usuario_publico AS
+SELECT id_usuario, nombre, apellido, fecha_registro, estado, foto_perfil
+FROM usuario;
+
+-- XP total por usuario
+CREATE OR REPLACE VIEW v_xp_total_usuario AS
+SELECT u.id_usuario, u.nombre, u.apellido,
+       NVL(SUM(m.cantidad_xp), 0) AS xp_total
+FROM usuario u
+LEFT JOIN movimiento_xp m ON m.id_usuario = u.id_usuario
+GROUP BY u.id_usuario, u.nombre, u.apellido;
+
+-- Ranking de una temporada
+CREATE OR REPLACE VIEW v_ranking_temporada AS
+SELECT pt.id_temporada, pt.id_usuario, u.nombre, u.apellido, r.nombre AS rango,
+       pt.xp_temporada,
+       RANK() OVER (PARTITION BY pt.id_temporada ORDER BY pt.xp_temporada DESC) AS posicion
+FROM participacion_temporada pt
+JOIN usuario u ON u.id_usuario = pt.id_usuario
+JOIN rango   r ON r.id_rango   = pt.id_rango
+WHERE pt.estado = 'ACTIVA';
+
+/* =====================================================================
+   6. DATOS SEMILLA
+   ===================================================================== */
+INSERT INTO rol (nombre, descripcion) VALUES ('ADMIN',     'Administrador de la plataforma');
+INSERT INTO rol (nombre, descripcion) VALUES ('USUARIO',   'Usuario deportista estándar');
+INSERT INTO rol (nombre, descripcion) VALUES ('MODERADOR', 'Moderación de contenido y validaciones');
+
+INSERT INTO tipo_actividad (nombre, descripcion) VALUES ('Carrera',   'Running en exterior o cinta');
+INSERT INTO tipo_actividad (nombre, descripcion) VALUES ('Ciclismo',  'Ciclismo de ruta, MTB o estático');
+INSERT INTO tipo_actividad (nombre, descripcion) VALUES ('Caminata',  'Caminata o senderismo');
+INSERT INTO tipo_actividad (nombre, descripcion) VALUES ('Natación',  'Natación en piscina o aguas abiertas');
+INSERT INTO tipo_actividad (nombre, descripcion) VALUES ('Fuerza',    'Entrenamiento de fuerza o gimnasio');
+
+INSERT INTO proveedor_externo (nombre) VALUES ('Strava');
+INSERT INTO proveedor_externo (nombre) VALUES ('Garmin Connect');
+INSERT INTO proveedor_externo (nombre) VALUES ('Apple Health');
+INSERT INTO proveedor_externo (nombre) VALUES ('Google Fit');
+
+INSERT INTO rango (nombre, nivel, xp_minimo, xp_maximo) VALUES ('Bronce',   1,     0,   999);
+INSERT INTO rango (nombre, nivel, xp_minimo, xp_maximo) VALUES ('Plata',    2,  1000,  2999);
+INSERT INTO rango (nombre, nivel, xp_minimo, xp_maximo) VALUES ('Oro',      3,  3000,  5999);
+INSERT INTO rango (nombre, nivel, xp_minimo, xp_maximo) VALUES ('Platino',  4,  6000,  9999);
+INSERT INTO rango (nombre, nivel, xp_minimo, xp_maximo) VALUES ('Diamante', 5, 10000, 99999999);
+
+INSERT INTO liga (nombre, descripcion) VALUES ('Liga Principal', 'Liga abierta para todos los usuarios');
+
+COMMIT;
+
+/* =====================================================================
+   7. PERMISOS Y SINÓNIMOS
+   ===================================================================== */
+
+-- ----- Rol de aplicación: DML sobre tablas transaccionales -----
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.usuario                  TO rol_kinet_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.usuario_rol              TO rol_kinet_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.recuperacion_cuenta      TO rol_kinet_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.evaluacion_nivel         TO rol_kinet_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.usuario_mision           TO rol_kinet_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.usuario_reto             TO rol_kinet_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.notificacion             TO rol_kinet_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.integracion_usuario      TO rol_kinet_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.racha                    TO rol_kinet_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.entrenamiento            TO rol_kinet_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.participacion_temporada  TO rol_kinet_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.competencia              TO rol_kinet_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.participante_competencia TO rol_kinet_app;
+
+-- Tablas de auditoría: solo lectura e inserción (sin UPDATE/DELETE)
+GRANT SELECT, INSERT ON kinet_owner.movimiento_xp   TO rol_kinet_app;
+GRANT SELECT, INSERT ON kinet_owner.historial_rango TO rol_kinet_app;
+
+-- Catálogos: solo lectura para la aplicación
+GRANT SELECT ON kinet_owner.rol               TO rol_kinet_app;
+GRANT SELECT ON kinet_owner.tipo_actividad    TO rol_kinet_app;
+GRANT SELECT ON kinet_owner.proveedor_externo TO rol_kinet_app;
+GRANT SELECT ON kinet_owner.mision            TO rol_kinet_app;
+GRANT SELECT ON kinet_owner.reto              TO rol_kinet_app;
+GRANT SELECT ON kinet_owner.liga              TO rol_kinet_app;
+GRANT SELECT ON kinet_owner.temporada         TO rol_kinet_app;
+GRANT SELECT ON kinet_owner.rango             TO rol_kinet_app;
+
+GRANT SELECT ON kinet_owner.v_usuario_publico  TO rol_kinet_app;
+GRANT SELECT ON kinet_owner.v_xp_total_usuario TO rol_kinet_app;
+GRANT SELECT ON kinet_owner.v_ranking_temporada TO rol_kinet_app;
+
+-- ----- Rol administrador funcional: DML completo sobre catálogos y todo el esquema -----
+BEGIN
+  FOR t IN (SELECT table_name FROM all_tables WHERE owner = 'KINET_OWNER') LOOP
+    EXECUTE IMMEDIATE 'GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.' || t.table_name || ' TO rol_kinet_admin';
+  END LOOP;
+  FOR v IN (SELECT view_name FROM all_views WHERE owner = 'KINET_OWNER') LOOP
+    EXECUTE IMMEDIATE 'GRANT SELECT ON kinet_owner.' || v.view_name || ' TO rol_kinet_admin';
+  END LOOP;
+END;
+/
+
+-- ----- Rol de solo lectura: sin acceso a credenciales ni tokens -----
+-- (usuario, recuperacion_cuenta e integracion_usuario quedan excluidas; se usa la vista pública)
+BEGIN
+  FOR t IN (SELECT table_name FROM all_tables
+            WHERE owner = 'KINET_OWNER'
+              AND table_name NOT IN ('USUARIO','RECUPERACION_CUENTA','INTEGRACION_USUARIO')) LOOP
+    EXECUTE IMMEDIATE 'GRANT SELECT ON kinet_owner.' || t.table_name || ' TO rol_kinet_reader';
+  END LOOP;
+  FOR v IN (SELECT view_name FROM all_views WHERE owner = 'KINET_OWNER') LOOP
+    EXECUTE IMMEDIATE 'GRANT SELECT ON kinet_owner.' || v.view_name || ' TO rol_kinet_reader';
+  END LOOP;
+END;
+/
+
+-- ----- Sinónimos para que los usuarios no antepongan el esquema -----
+BEGIN
+  FOR o IN (SELECT object_name FROM all_objects
+            WHERE owner = 'KINET_OWNER' AND object_type IN ('TABLE','VIEW')) LOOP
+    EXECUTE IMMEDIATE 'CREATE OR REPLACE SYNONYM kinet_app.'    || o.object_name || ' FOR kinet_owner.' || o.object_name;
+    EXECUTE IMMEDIATE 'CREATE OR REPLACE SYNONYM kinet_admin.'  || o.object_name || ' FOR kinet_owner.' || o.object_name;
+    EXECUTE IMMEDIATE 'CREATE OR REPLACE SYNONYM kinet_reader.' || o.object_name || ' FOR kinet_owner.' || o.object_name;
+  END LOOP;
+END;
+/
+
+/* =====================================================================
+   VERIFICACIÓN
+   ===================================================================== */
+-- SELECT table_name FROM all_tables WHERE owner = 'KINET_OWNER' ORDER BY 1;
+-- SELECT constraint_name, constraint_type, table_name FROM all_constraints WHERE owner = 'KINET_OWNER' ORDER BY 3,2;
+-- SELECT grantee, table_name, privilege FROM dba_tab_privs WHERE owner = 'KINET_OWNER' ORDER BY 1,2;
+
+/* =====================================================================
+   VERIFICACIÓN CONTRA EL MER
+   ===================================================================== */
+PROMPT --- Restricciones UNIQUE (UQ) ---
+SELECT c.table_name, c.constraint_name,
+       LISTAGG(cc.column_name, ', ') WITHIN GROUP (ORDER BY cc.position) AS columnas
+FROM all_constraints c
+JOIN all_cons_columns cc ON cc.owner = c.owner AND cc.constraint_name = c.constraint_name
+WHERE c.owner = 'KINET_OWNER' AND c.constraint_type = 'U'
+GROUP BY c.table_name, c.constraint_name
+ORDER BY 1, 2;
+
+PROMPT --- Columnas opcionales (NULL permitido, excluye FKs que son PK) ---
+SELECT table_name, column_name
+FROM all_tab_columns
+WHERE owner = 'KINET_OWNER' AND nullable = 'Y'
+  AND table_name NOT LIKE 'BIN$%'
+ORDER BY table_name, column_id;
+
+PROMPT === KINET: script finalizado ===
