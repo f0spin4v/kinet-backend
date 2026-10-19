@@ -10,6 +10,8 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -58,6 +60,16 @@ public class RestExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ResponseDTO<String>> cuerpoInvalido(HttpMessageNotReadableException ex) {
         return respuesta(HttpStatus.BAD_REQUEST, "La información enviada no tiene el formato esperado.");
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ResponseDTO<String>> archivoGrande(MaxUploadSizeExceededException ex) {
+        return respuesta(HttpStatus.BAD_REQUEST, "La imagen no puede pesar más de 5 MB.");
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    public ResponseEntity<ResponseDTO<String>> faltaArchivo(MissingServletRequestPartException ex) {
+        return respuesta(HttpStatus.BAD_REQUEST, "Adjunta la imagen en el campo \"" + ex.getRequestPartName() + "\".");
     }
 
     @ExceptionHandler(TypeMismatchException.class)

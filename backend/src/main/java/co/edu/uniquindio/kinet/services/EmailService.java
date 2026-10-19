@@ -4,4 +4,7 @@ package co.edu.uniquindio.kinet.services;
 public interface EmailService {
 
     void enviarRecuperacion(String correo, String nombre, String token);
+
+    /** Aviso del canal EMAIL de las notificaciones. Lanza excepción si el envío falla. */
+    void enviarAviso(String correo, String asunto, String mensaje);
 }

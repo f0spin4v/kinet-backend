@@ -62,6 +62,21 @@ class ProgresoIntegracionTest extends PruebaIntegracion {
     }
 
     @Test
+    void laBandejaSeBorraDeUnaEnUnaOCompleta() throws Exception {
+        String token = registrar("leo@kinet.com", "leo_run");
+        entrenar(token, "FUERZA", 50, "MEDIA", haceHoras(2), null); // 3 notificaciones
+        long id = notificacionRepository.findAll().get(0).getId();
+
+        delete("/api/notificaciones/" + id, registrar("ana@kinet.com", "ana_gg")).andExpect(status().isNotFound());
+        delete("/api/notificaciones/" + id, token).andExpect(status().isOk());
+        delete("/api/notificaciones/" + id, token).andExpect(status().isNotFound());
+        get("/api/notificaciones", token).andExpect(jsonPath("$.respuesta.totalElementos").value(2));
+        delete("/api/notificaciones", token).andExpect(status().isOk());
+        get("/api/notificaciones", token).andExpect(jsonPath("$.respuesta.totalElementos").value(0));
+        get("/api/progreso", token).andExpect(jsonPath("$.respuesta.notificacionesSinLeer").value(0));
+    }
+
+    @Test
     void lasActividadesMuestranSuXpVigente() throws Exception {
         String token = registrar("leo@kinet.com", "leo_run");
         get("/api/catalogos/actividades", token)

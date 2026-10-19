@@ -1,13 +1,10 @@
 package co.edu.uniquindio.kinet.dto.auth;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 
 public record RestablecerContrasenaDTO(
         @NotBlank(message = "Falta el código de recuperación.")
         String token,
-
         @NotBlank(message = "Escribe una contraseña.")
         @Size(min = 8, max = 72, message = "La contraseña debe tener entre 8 y 72 caracteres.")
         @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d).+$", message = "La contraseña debe incluir al menos una letra y un número.")

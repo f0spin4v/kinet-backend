@@ -1,18 +1,6 @@
 package co.edu.uniquindio.kinet.model.enums;
 
-/** Intensidad declarada de un entrenamiento y su multiplicador de XP. */
+/** Intensidad declarada de un entrenamiento. El XP por minuto de cada una está en REGLA_PUNTUACION. */
 public enum Intensidad {
-    BAJA(1.0),
-    MEDIA(1.5),
-    ALTA(2.0);
-
-    private final double multiplicador;
-
-    Intensidad(double multiplicador) {
-        this.multiplicador = multiplicador;
-    }
-
-    public double getMultiplicador() {
-        return multiplicador;
-    }
+    BAJA, MEDIA, ALTA
 }

@@ -36,6 +36,24 @@ class StaffIntegracionTest extends PruebaIntegracion {
     }
 
     @Test
+    void elEquipoVeLosLogrosYLosClanesParaGestionarlos() throws Exception {
+        String jugador = registrar("leo@kinet.com", "leo_run");
+        String admin = cuentaConRol("admin@kinet.com", "admin_k", "ADMINISTRADOR");
+        String entrenador = cuentaConRol("entrenador@kinet.com", "entrenador_k", "ENTRENADOR");
+
+        // el administrador consulta el catálogo de logros; el entrenador no
+        get("/api/logros", admin).andExpect(status().isOk());
+        get("/api/logros", entrenador).andExpect(status().isForbidden());
+        // el equipo lista los clanes (para cerrarlos desde moderación), pero no entra a "mi clan"
+        get("/api/clanes", entrenador).andExpect(status().isOk());
+        get("/api/clanes", admin).andExpect(status().isOk());
+        get("/api/clanes/mio", entrenador).andExpect(status().isForbidden());
+        // y sigue sin poder crear ni unirse
+        post("/api/clanes", Map.of("nombre", "Equipo", "capacidadMax", 5), admin).andExpect(status().isForbidden());
+        get("/api/clanes", jugador).andExpect(status().isOk());
+    }
+
+    @Test
     void cadaRolSoloEntraASuZona() throws Exception {
         String jugador = registrar("leo@kinet.com", "leo_run");
         String admin = cuentaConRol("admin@kinet.com", "admin_k", "ADMINISTRADOR");

@@ -1,14 +1,18 @@
 package co.edu.uniquindio.kinet.model;
 
-import co.edu.uniquindio.kinet.model.converters.SiNoConverter;
-import co.edu.uniquindio.kinet.model.enums.NivelInicial;
-import co.edu.uniquindio.kinet.model.enums.TipoMeta;
+import co.edu.uniquindio.kinet.model.enums.AmbitoReto;
+import co.edu.uniquindio.kinet.model.enums.EstadoReto;
+import co.edu.uniquindio.kinet.model.enums.MetricaReto;
+import co.edu.uniquindio.kinet.model.enums.Periodicidad;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
 /**
- * Reto o misión que el jugador puede aceptar.
- * Si tipoActividad es null, cuenta cualquier actividad. Si nivelRequerido es null, es para todos los niveles.
+ * Reto del catálogo. tipoActividad NULL = cualquier actividad; nivelHabilidad NULL = todos los niveles;
+ * temporada solo para periodicidad TEMPORADA.
  */
 @Entity
 @Table(name = "RETO")
@@ -24,40 +28,57 @@ public class Reto {
     @Column(name = "id_reto")
     private Long id;
 
-    @Column(name = "titulo", nullable = false, length = 100)
-    private String titulo;
-
-    @Column(name = "descripcion", nullable = false, length = 300)
-    private String descripcion;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "tipo_meta", nullable = false, length = 10)
-    private TipoMeta tipoMeta;
-
-    @Column(name = "meta_valor", nullable = false)
-    private Integer metaValor;
-
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "id_tipo")
+    @JoinColumn(name = "id_tipo_actividad")
     private TipoActividad tipoActividad;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "nivel_requerido", length = 20)
-    private NivelInicial nivelRequerido;
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "id_nivel_habilidad")
+    private NivelHabilidad nivelHabilidad;
 
-    @Column(name = "duracion_dias", nullable = false)
-    private Integer duracionDias;
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "id_temporada")
+    private Temporada temporada;
+
+    @Column(name = "nombre", nullable = false, length = 100)
+    private String nombre;
+
+    @Column(name = "descripcion", nullable = false, length = 500)
+    private String descripcion;
+
+    @Column(name = "condiciones", length = 300)
+    private String condiciones;
+
+    @Column(name = "imagen_url", length = 300)
+    private String imagenUrl;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "metrica", nullable = false, length = 20)
+    private MetricaReto metrica;
+
+    @Column(name = "valor_meta", nullable = false, precision = 10, scale = 2)
+    private BigDecimal valorMeta;
 
     @Column(name = "xp_recompensa", nullable = false)
     private Integer xpRecompensa;
 
-    @Builder.Default
-    @Convert(converter = SiNoConverter.class)
-    @Column(name = "activo", nullable = false, length = 1)
-    private Boolean activo = true;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "periodicidad", nullable = false, length = 10)
+    private Periodicidad periodicidad;
 
-    /** Indica si este reto está disponible para un jugador con el nivel dado. */
-    public boolean aplicaParaNivel(NivelInicial nivel) {
-        return nivelRequerido == null || nivelRequerido == nivel;
-    }
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ambito", nullable = false, length = 10)
+    private AmbitoReto ambito = AmbitoReto.INDIVIDUAL;
+
+    @Column(name = "fecha_inicio", nullable = false)
+    private LocalDateTime fechaInicio;
+
+    @Column(name = "fecha_fin")
+    private LocalDateTime fechaFin;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "estado", nullable = false, length = 10)
+    private EstadoReto estado = EstadoReto.BORRADOR;
 }

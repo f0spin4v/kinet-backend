@@ -1,6 +1,6 @@
 package co.edu.uniquindio.kinet.model.enums;
 
-/** Tipos de notificación que recibe el jugador. */
+/** Tipos de aviso que recibe el jugador. */
 public enum TipoNotificacion {
-    ENTRENAMIENTO_VALIDADO, ENTRENAMIENTO_RECHAZADO, NIVEL_ALCANZADO, RETO_COMPLETADO, SEGURIDAD
+    VALIDACION, RACHA, NIVEL, RETO, LOGRO, CLAN, MATCHMAKING, COMPETENCIA, CAMBIO_RANGO, FIN_TEMPORADA, RECUPERACION, SEGURIDAD
 }

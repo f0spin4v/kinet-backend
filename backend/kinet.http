@@ -1,23 +1,25 @@
 ### =====================================================================
-### Kinet API: pruebas funcionales de los procesos 1 y 2
+### Kinet API v2: pruebas funcionales
 ### Abrir en IntelliJ y ejecutar cada petición con el botón verde, en orden.
-### Requiere el backend encendido y los scripts de /db ejecutados.
+### Requiere el backend encendido y kinet_bd.sql cargado (datos de prueba).
 ### =====================================================================
 
 @api = http://localhost:8080/api
 
-### ---------- PROCESO 1: USUARIO Y AUTENTICACIÓN ----------
+### ---------- CUENTA ----------
 
 ### 1. Registro (201). Si ya existe, pasa al login.
 POST {{api}}/auth/registro
 Content-Type: application/json
 
 {
-  "nombre": "Jugador Demo",
+  "nombres": "Jugador",
+  "apellidos": "Demo",
   "correo": "demo@kinet.com",
   "contrasena": "Demo2026",
-  "nickname": "jugador_demo",
-  "aceptaDatos": true
+  "gamertag": "jugador_demo",
+  "fechaNacimiento": "2002-05-10",
+  "aceptaPolitica": true
 }
 
 > {% client.global.set("token", response.body.respuesta.token); %}
@@ -33,174 +35,304 @@ Content-Type: application/json
 
 > {% client.global.set("token", response.body.respuesta.token); %}
 
-### 3. Login con contraseña equivocada (401)
+### 3. Cuenta bloqueada (403)
 POST {{api}}/auth/login
 Content-Type: application/json
 
 {
-  "correo": "demo@kinet.com",
-  "contrasena": "Equivocada1"
+  "correo": "pedro@kinet.com",
+  "contrasena": "Kinet2026"
 }
 
-### 4. Registro con datos inválidos (400, un mensaje por campo)
-POST {{api}}/auth/registro
-Content-Type: application/json
-
-{
-  "nombre": "",
-  "correo": "no-es-correo",
-  "contrasena": "corta",
-  "nickname": "x",
-  "aceptaDatos": false
-}
-
-### 5. Mi perfil (200)
+### 4. Mi perfil
 GET {{api}}/usuarios/me
 Authorization: Bearer {{token}}
 
-### 6. Editar perfil (200)
-PUT {{api}}/usuarios/me
-Authorization: Bearer {{token}}
-Content-Type: application/json
+### ---------- EVALUACIÓN DE NIVEL ----------
 
-{
-  "nombre": "Jugador Demo",
-  "nickname": "jugador_demo",
-  "avatarUrl": "https://i.pravatar.cc/150?img=12",
-  "fechaNacimiento": "2001-03-15",
-  "ciudad": "Armenia",
-  "deporteFavorito": "Running"
-}
-
-### 7. Preguntas de la evaluación de nivel (200)
+### 5. Preguntas (guarda la primera opción de cada pregunta)
 GET {{api}}/evaluacion/preguntas
 Authorization: Bearer {{token}}
 
-### 8. Enviar evaluación (201): 3 respuestas B = Intermedio. Solo se puede una vez (409 la segunda).
+> {%
+    const ids = response.body.respuesta.map(p => p.opciones[1].id);
+    client.global.set("opciones", JSON.stringify(ids));
+%}
+
+### 6. Responder (201): elige la segunda opción de cada pregunta (vota por INTERMEDIO)
 POST {{api}}/evaluacion
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
-{
-  "respuestas": ["B", "B", "A", "B", "A"]
-}
+{ "idsOpciones": {{opciones}} }
 
-### 9. Pedir enlace de recuperación (200). Sin correo configurado, el enlace sale en la consola del backend.
-POST {{api}}/auth/recuperar-contrasena
-Content-Type: application/json
+### ---------- ENTRENAMIENTOS ----------
 
-{
-  "correo": "demo@kinet.com"
-}
-
-### 10. Restablecer contraseña: pegar el token del enlace (200, o 400 si no es válido)
-POST {{api}}/auth/restablecer-contrasena
-Content-Type: application/json
-
-{
-  "token": "PEGAR_AQUI_EL_TOKEN_DEL_ENLACE",
-  "nuevaContrasena": "Demo2026"
-}
-
-### 11. Sin token (401)
-GET {{api}}/usuarios/me
-
-### ---------- PROCESO 2: ENTRENAMIENTOS Y RETOS ----------
-
-### 12. Tipos de actividad (200)
-GET {{api}}/actividades
+### 7. Actividades con su XP por minuto vigente (guarda el id de FUERZA)
+GET {{api}}/catalogos/actividades
 Authorization: Bearer {{token}}
 
-### 13. Retos de mi nivel (200)
+> {% client.global.set("fuerza", response.body.respuesta.find(a => a.nombre === "FUERZA").id); %}
+
+### 8. Unirme a "Misión diaria" antes de entrenar
 GET {{api}}/retos
 Authorization: Bearer {{token}}
 
-### 14. Unirme al reto 1 "Primer paso" (201)
-POST {{api}}/retos/1/participaciones
+> {% client.global.set("mision", response.body.respuesta.find(r => r.nombre === "Misión diaria").id); %}
+
+###
+POST {{api}}/retos/{{mision}}/participaciones
 Authorization: Bearer {{token}}
 
-### 15. Unirme al reto 2 "Misión diaria" (201)
-POST {{api}}/retos/2/participaciones
+### 9. Cronómetro: iniciar (el servidor guarda la hora de inicio)
+POST {{api}}/entrenamientos/en-curso
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "idTipoActividad": {{fuerza}} }
+
+### 9b. Ver el cronómetro (minutos transcurridos)
+GET {{api}}/entrenamientos/en-curso
 Authorization: Bearer {{token}}
 
-### 16. Registrar entrenamiento válido (201, VALIDADO). Empezó hace una hora y duró 40 minutos.
-< {%
-    // hora de Colombia (UTC-5) menos una hora, en formato 2026-10-12T07:30:00
-    const inicio = new Date(Date.now() - 6 * 60 * 60 * 1000);
-    request.variables.set("inicio", inicio.toISOString().substring(0, 19));
-%}
-POST {{api}}/entrenamientos
+### 9c. Finalizar (el servidor guarda la hora de fin y calcula la duración).
+###     Si se finaliza enseguida queda RECHAZADO: FUERZA pide al menos 15 minutos. Espera o cancela con 9d.
+POST {{api}}/entrenamientos/en-curso/fin
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "codigoActividad": "RUNNING",
-  "duracionMinutos": 40,
   "intensidad": "MEDIA",
-  "fechaInicio": "{{inicio}}"
+  "notas": "Pierna y core"
 }
 
-### 17. Entrenamiento rechazado por el anti-trampa: dura menos de 10 minutos (201, RECHAZADO)
-POST {{api}}/entrenamientos
+> {% client.global.set("entrenamiento", response.body.respuesta.entrenamiento.id); %}
+
+### 9d. Cancelar el cronómetro en curso (no registra nada)
+DELETE {{api}}/entrenamientos/en-curso
+Authorization: Bearer {{token}}
+
+### 10. Evidencia opcional: subir una imagen (JPEG/PNG/WEBP, hasta 5 MB, da +10 XP) a un entrenamiento VALIDADO.
+###     Cambia la ruta de la imagen por una tuya.
+POST {{api}}/entrenamientos/{{entrenamiento}}/evidencia
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=limite
+
+--limite
+Content-Disposition: form-data; name="archivo"; filename="captura.png"
+Content-Type: image/png
+
+< ./captura.png
+--limite--
+
+### 10b. Evidencia con enlace de una app deportiva (Strava, Garmin Connect, Polar Flow, Komoot). Da +10 XP.
+###      Es obligatoria en sesiones de 181 a 240 min (4 horas para subirla) y para competir.
+###      Si el entrenamiento ya tenía una imagen, el enlace la reemplaza sin repetir el bonus.
+POST {{api}}/entrenamientos/{{entrenamiento}}/evidencia/enlace
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
-{
-  "codigoActividad": "GIMNASIO",
-  "duracionMinutos": 5,
-  "intensidad": "ALTA",
-  "fechaInicio": "2026-10-12T06:00:00"
-}
+{ "url": "https://www.strava.com/activities/123456789" }
 
-### 18. Mi historial (200)
-GET {{api}}/entrenamientos
-Authorization: Bearer {{token}}
-
-### 19. Dashboard: XP, nivel, racha y semana (200)
+### 11. Dashboard y libro de XP
 GET {{api}}/progreso
 Authorization: Bearer {{token}}
 
-### 20. Mis retos y su avance (200)
+###
+GET {{api}}/progreso/movimientos
+Authorization: Bearer {{token}}
+
+### ---------- RETOS Y CLANES ----------
+
+### 12. Mis retos
 GET {{api}}/retos/mios
 Authorization: Bearer {{token}}
 
-### 21. Detalle de un reto (200)
-GET {{api}}/retos/1
+### 13. Clanes activos y unirme al primero
+GET {{api}}/clanes
 Authorization: Bearer {{token}}
 
-### 22. Mis notificaciones (200)
-GET {{api}}/notificaciones
+> {% client.global.set("clan", response.body.respuesta.contenido[0].id); %}
+
+###
+POST {{api}}/clanes/{{clan}}/miembros
 Authorization: Bearer {{token}}
 
-### ---------- ADMINISTRACIÓN (admin@kinet.com / Admin2026) ----------
+### ---------- COMPETITIVO ----------
 
-### 23. Login del administrador
+### 14. Pedir enfrentamiento: la primera vez es la colocación de 24 horas
+POST {{api}}/matchmaking/solicitudes
+Authorization: Bearer {{token}}
+
+### 15. Mis enfrentamientos, mi rango y el ranking
+GET {{api}}/matchmaking/enfrentamientos
+Authorization: Bearer {{token}}
+
+###
+GET {{api}}/temporadas/activa/mia
+Authorization: Bearer {{token}}
+
+###
+GET {{api}}/temporadas/activa/ranking
+Authorization: Bearer {{token}}
+
+### 15b. Mis cambios de rango en la temporada (la inscripción y cada subida o bajada)
+GET {{api}}/temporadas/activa/mia/historial-rango
+Authorization: Bearer {{token}}
+
+### ---------- COMPETENCIAS (por invitación) ----------
+
+### 16. Sofía tiene una invitación pendiente a "Reto del parque" (grupal creada por Laura)
 POST {{api}}/auth/login
 Content-Type: application/json
 
-{
-  "correo": "admin@kinet.com",
-  "contrasena": "Admin2026"
-}
+{ "correo": "sofia@kinet.com", "contrasena": "Kinet2026" }
 
-> {% client.global.set("tokenAdmin", response.body.respuesta.token); %}
+> {% client.global.set("sofia", response.body.respuesta.token); %}
 
-### 24. Crear un reto (201)
-POST {{api}}/admin/retos
-Authorization: Bearer {{tokenAdmin}}
+###
+GET {{api}}/competencias/invitaciones
+Authorization: Bearer {{sofia}}
+
+> {%
+    const c = response.body.respuesta.contenido[0];
+    client.global.set("grupal", c.id);
+    client.global.set("idSofia", c.participantes.find(p => p.gamertag === "sofi_fit").idUsuario);
+%}
+
+### 16b. Sofía acepta la grupal (empieza en la fecha fijada si aceptaron al menos 2)
+POST {{api}}/competencias/{{grupal}}/aceptacion
+Authorization: Bearer {{sofia}}
+
+### 16c. Retar a Sofía a un duelo de 24 horas (solo cuenta FUERZA)
+POST {{api}}/competencias
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "titulo": "Nadador constante",
-  "descripcion": "Nada 3 veces esta semana.",
-  "tipoMeta": "SESIONES",
-  "metaValor": 3,
-  "codigoActividad": "NATACION",
-  "nivelRequerido": null,
-  "duracionDias": 7,
-  "xpRecompensa": 70
+  "tipo": "DUELO",
+  "nombre": "Duelo de fuerza",
+  "idsInvitados": [{{idSofia}}],
+  "idTipoActividad": {{fuerza}},
+  "duracionRondaHoras": 24
 }
 
-### 25. Un jugador no puede entrar a administración (403)
+> {% client.global.set("duelo", response.body.respuesta.id); %}
+
+### 16d. Sofía acepta: el duelo empieza ya (con /rechazo se cancelaría)
+POST {{api}}/competencias/{{duelo}}/aceptacion
+Authorization: Bearer {{sofia}}
+
+### 16e. Mis competencias y el detalle con el puntaje en vivo
+GET {{api}}/competencias
+Authorization: Bearer {{token}}
+
+###
+GET {{api}}/competencias/{{duelo}}
+Authorization: Bearer {{token}}
+
+### 17. Notificaciones (fechaLectura queda NULL hasta que se leen)
+GET {{api}}/notificaciones
+Authorization: Bearer {{token}}
+
+###
+PATCH {{api}}/notificaciones/leidas
+Authorization: Bearer {{token}}
+
+### ---------- EQUIPO ----------
+
+### 18. Entrenador: revisar pendientes y evidencias (la sesión de 200 minutos de Carlos y su enlace de Strava ya están en los datos)
+POST {{api}}/auth/login
+Content-Type: application/json
+
+{ "correo": "entrenador@kinet.com", "contrasena": "Kinet2026" }
+
+> {% client.global.set("entrenador", response.body.respuesta.token); %}
+
+###
+GET {{api}}/moderacion/entrenamientos/pendientes
+Authorization: Bearer {{entrenador}}
+
+> {% client.global.set("pendiente", response.body.respuesta.contenido[0].entrenamiento.id); %}
+
+###
+POST {{api}}/moderacion/entrenamientos/{{pendiente}}/revision
+Authorization: Bearer {{entrenador}}
+Content-Type: application/json
+
+{ "aprobar": true }
+
+###
+GET {{api}}/moderacion/evidencias
+Authorization: Bearer {{entrenador}}
+
+> {% client.global.set("evidencia", response.body.respuesta.contenido[0].id); %}
+
+###
+GET {{api}}/moderacion/evidencias/{{evidencia}}/archivo
+Authorization: Bearer {{entrenador}}
+
+###
+POST {{api}}/moderacion/evidencias/{{evidencia}}/revision
+Authorization: Bearer {{entrenador}}
+Content-Type: application/json
+
+{ "aceptar": true }
+
+### 19. Administrador (soporte): ajuste de XP con motivo
+POST {{api}}/auth/login
+Content-Type: application/json
+
+{ "correo": "admin@kinet.com", "contrasena": "Admin2026" }
+
+> {% client.global.set("admin", response.body.respuesta.token); %}
+
+###
+GET {{api}}/soporte/usuarios?correo=demo
+Authorization: Bearer {{admin}}
+
+> {% client.global.set("demo", response.body.respuesta.contenido[0].id); %}
+
+###
+POST {{api}}/soporte/ajustes-xp
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{ "idUsuario": {{demo}}, "cantidad": 25, "motivo": "Compensación por falla de sincronización" }
+
+### 20. Administrador (analítica): indicadores
+POST {{api}}/auth/login
+Content-Type: application/json
+
+{ "correo": "admin@kinet.com", "contrasena": "Admin2026" }
+
+> {% client.global.set("admin", response.body.respuesta.token); %}
+
+###
+GET {{api}}/analitica/resumen
+Authorization: Bearer {{admin}}
+
+### 21. Administrador: reglas de XP vigentes y temporadas
+POST {{api}}/auth/login
+Content-Type: application/json
+
+{ "correo": "admin@kinet.com", "contrasena": "Admin2026" }
+
+> {% client.global.set("admin", response.body.respuesta.token); %}
+
+###
+GET {{api}}/admin/reglas-puntuacion
+Authorization: Bearer {{admin}}
+
+###
+GET {{api}}/admin/temporadas
+Authorization: Bearer {{admin}}
+
+### 21b. Actividades (también las inactivas). Para desactivar una:
+###     PATCH {{api}}/admin/actividades/{id}/estado con { "estado": "INACTIVA" }
+GET {{api}}/admin/actividades
+Authorization: Bearer {{admin}}
+
+### 22. Un jugador no entra a administración (403)
 GET {{api}}/admin/retos
 Authorization: Bearer {{token}}

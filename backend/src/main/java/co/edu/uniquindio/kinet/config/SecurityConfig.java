@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -36,7 +37,21 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/error").permitAll()
+                        // staff
                         .requestMatchers("/api/admin/**").hasRole("ADMINISTRADOR")
+                        .requestMatchers("/api/moderacion/**").hasAnyRole("ENTRENADOR", "ADMINISTRADOR")
+                        .requestMatchers("/api/soporte/**").hasRole("ADMINISTRADOR")
+                        .requestMatchers("/api/analitica/**").hasRole("ADMINISTRADOR")
+                        // el administrador también consulta el catálogo de logros (para gestionarlos)
+                        .requestMatchers(HttpMethod.GET, "/api/logros").hasAnyRole("JUGADOR", "ADMINISTRADOR")
+                        // el equipo ve los clanes (lista y detalle) para poder cerrarlos desde moderación
+                        .requestMatchers(HttpMethod.GET, "/api/clanes", "/api/clanes/{id:[0-9]+}")
+                        .hasAnyRole("JUGADOR", "ENTRENADOR", "ADMINISTRADOR")
+                        // acciones de juego: solo jugadores
+                        .requestMatchers("/api/entrenamientos/**", "/api/retos/**", "/api/competencias/**",
+                                "/api/clanes/**", "/api/matchmaking/**", "/api/evaluacion/**", "/api/logros/**",
+                                "/api/temporadas/activa/mia/**", "/api/temporadas/activa/abandono").hasRole("JUGADOR")
+                        // perfil, progreso, notificaciones, catálogos y ranking: cualquier cuenta autenticada
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e
                         // sin token válido: 401

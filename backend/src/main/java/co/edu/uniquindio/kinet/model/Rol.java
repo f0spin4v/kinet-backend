@@ -14,6 +14,7 @@ public class Rol {
 
     public static final String JUGADOR = "JUGADOR";
     public static final String ADMINISTRADOR = "ADMINISTRADOR";
+    public static final String ENTRENADOR = "ENTRENADOR";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -22,4 +23,7 @@ public class Rol {
 
     @Column(name = "nombre", nullable = false, unique = true, length = 30)
     private String nombre;
+
+    @Column(name = "descripcion", length = 200)
+    private String descripcion;
 }

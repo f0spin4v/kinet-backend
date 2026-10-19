@@ -3,8 +3,8 @@ package co.edu.uniquindio.kinet.dto.entrenamiento;
 import java.util.List;
 
 /**
- * Respuesta al registrar un entrenamiento: el registro y su efecto en el progreso del jugador.
- * Si el anti-trampa lo rechaza, estado = RECHAZADO, motivoRechazo explica la causa y no se suma XP.
+ * Respuesta al registrar o aprobar un entrenamiento. xpGanado suma el entrenamiento, los retos completados
+ * y los logros desbloqueados. Si quedó RECHAZADO o PENDIENTE, no suma XP.
  */
 public record ResultadoEntrenamientoDTO(
         EntrenamientoDTO entrenamiento,
@@ -13,6 +13,7 @@ public record ResultadoEntrenamientoDTO(
         int nivel,
         boolean subioNivel,
         int rachaActual,
-        List<String> retosCompletados
+        List<String> retosCompletados,
+        List<String> logrosObtenidos
 ) {
 }

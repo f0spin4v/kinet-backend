@@ -55,4 +55,19 @@ public class EmailServiceImpl implements EmailService {
             log.warn("No se pudo enviar el correo a {}: {}. Enlace: {}", correo, e.getMessage(), enlace);
         }
     }
+
+    @Override
+    public void enviarAviso(String correo, String asunto, String mensaje) {
+        JavaMailSender sender = mailSender.getIfAvailable();
+        if (host == null || host.isBlank() || sender == null) {
+            log.info("[CORREO SIMULADO] Para {}: {} - {}", correo, asunto, mensaje);
+            return;
+        }
+        SimpleMailMessage correoAviso = new SimpleMailMessage();
+        correoAviso.setFrom(remitente);
+        correoAviso.setTo(correo);
+        correoAviso.setSubject("Kinet: " + asunto);
+        correoAviso.setText(mensaje + "\n\nEquipo Kinet");
+        sender.send(correoAviso);
+    }
 }

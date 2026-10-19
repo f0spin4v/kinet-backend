@@ -1,6 +1,5 @@
 package co.edu.uniquindio.kinet.model;
 
-import co.edu.uniquindio.kinet.model.converters.SiNoConverter;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -25,7 +24,7 @@ public class TokenRecuperacion {
     @JoinColumn(name = "id_usuario", nullable = false)
     private Usuario usuario;
 
-    @Column(name = "token_hash", nullable = false, unique = true, length = 100)
+    @Column(name = "token_hash", nullable = false, unique = true, length = 255)
     private String tokenHash;
 
     @Builder.Default
@@ -35,12 +34,11 @@ public class TokenRecuperacion {
     @Column(name = "fecha_expiracion", nullable = false)
     private LocalDateTime fechaExpiracion;
 
-    @Builder.Default
-    @Convert(converter = SiNoConverter.class)
-    @Column(name = "usado", nullable = false, length = 1)
-    private Boolean usado = false;
+    /** NULL = todavía no se ha usado. */
+    @Column(name = "fecha_uso")
+    private LocalDateTime fechaUso;
 
     public boolean estaVigente() {
-        return !Boolean.TRUE.equals(usado) && fechaExpiracion.isAfter(LocalDateTime.now());
+        return fechaUso == null && fechaExpiracion.isAfter(LocalDateTime.now());
     }
 }

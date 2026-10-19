@@ -1,21 +1,31 @@
 package co.edu.uniquindio.kinet.dto.usuario;
 
+import co.edu.uniquindio.kinet.model.PerfilJugador;
+import co.edu.uniquindio.kinet.model.Usuario;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
-/**
- * Datos del usuario que se devuelven al frontend. Nunca incluye la contraseña.
- * nivelInicial es null mientras el jugador no haya hecho la evaluación de nivel.
- */
+/** Datos de la cuenta y del perfil. Nunca incluye la contraseña. nivelHabilidad es null sin evaluación. */
 public record UsuarioDTO(
         Long id,
-        String nombre,
+        String nombres,
+        String apellidos,
         String correo,
         String rol,
-        String nickname,
+        String estado,
+        String gamertag,
         String avatarUrl,
         LocalDate fechaNacimiento,
-        String ciudad,
-        String deporteFavorito,
-        String nivelInicial
+        String nivelHabilidad,
+        LocalDateTime fechaRegistro
 ) {
+    public static UsuarioDTO de(Usuario usuario, String nivelHabilidad) {
+        PerfilJugador perfil = usuario.getPerfil();
+        return new UsuarioDTO(usuario.getId(), usuario.getNombres(), usuario.getApellidos(), usuario.getCorreo(),
+                usuario.getRol().getNombre(), usuario.getEstado().name(),
+                perfil == null ? null : perfil.getGamertag(),
+                perfil == null ? null : perfil.getAvatarUrl(),
+                perfil == null ? null : perfil.getFechaNacimiento(),
+                nivelHabilidad, usuario.getFechaRegistro());
+    }
 }

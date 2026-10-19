@@ -1,6 +1,6 @@
 package co.edu.uniquindio.kinet.model.enums;
 
-/** Estado de una cuenta. */
+/** Estado de una cuenta. INACTIVO: la desactivó el jugador. BLOQUEADO: lo decidió soporte. */
 public enum EstadoUsuario {
-    ACTIVO, BLOQUEADO
+    ACTIVO, INACTIVO, BLOQUEADO
 }

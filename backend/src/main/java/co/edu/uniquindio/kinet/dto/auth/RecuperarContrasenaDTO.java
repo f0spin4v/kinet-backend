@@ -1,7 +1,6 @@
 package co.edu.uniquindio.kinet.dto.auth;
 
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.*;
 
 public record RecuperarContrasenaDTO(
         @NotBlank(message = "Escribe tu correo.")

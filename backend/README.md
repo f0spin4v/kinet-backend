@@ -1,26 +1,43 @@
 # Kinet · Backend
 
-API REST de Kinet, hecha en Java 17 con Spring Boot 3.5 y Oracle. Implementa los procesos de negocio 1 (Gestión de Usuario y Autenticación) y 2 (Gestión de Entrenamientos y Retos).
+API REST de Kinet, hecha en Java 17 con Spring Boot 3.5 y Oracle. Implementa el modelo v2 completo:
+
+- cuentas con 3 roles (jugador, administrador y entrenador);
+- evaluación de nivel configurable;
+- entrenamientos con cronómetro en el servidor, anti-trampa, moderación y evidencia (imagen opcional o enlace verificado de una app deportiva, con bonus de XP);
+- libro de XP, niveles y rachas;
+- retos por periodo y de clan;
+- clanes;
+- temporadas con ligas y rangos, matchmaking y enfrentamientos;
+- logros, notificaciones asíncronas, soporte y analítica.
 
 Proyecto de Ingeniería de Software III, Universidad del Quindío.
+
+> Qué cambió respecto a v1, las correcciones al diagrama y la lógica de cada proceso: [`docs/MIGRACION_V2.md`](../docs/MIGRACION_V2.md).
 
 ## Cómo ejecutarlo en local
 
 **Requisitos:** JDK 17 o superior, Docker Desktop e IntelliJ IDEA.
 
-1. **Levantar Oracle** (solo la primera vez):
+1. **Levantar Oracle** con un volumen para no perder los datos (solo la primera vez):
    ```bash
-   docker run -d --name kinet-db -p 1522:1521 -e ORACLE_PASSWORD=admin123 -e APP_USER=kinet -e APP_USER_PASSWORD=kinet123 gvenzl/oracle-free
+   docker run -d --name kinet-db -p 1522:1521 -e ORACLE_PASSWORD=admin123 -v kinet-db-data:/opt/oracle/oradata gvenzl/oracle-free:23-slim
    ```
    Las veces siguientes basta con `docker start kinet-db`.
 
-2. **Crear las tablas**, en orden, desde la carpeta `db` del repositorio:
+2. **Crear los usuarios, las tablas y los datos** con el script de la raíz del repositorio. Corre como SYSTEM y borra y recrea todo lo de Kinet:
    ```bash
-   docker cp 01_usuarios.sql kinet-db:/tmp/
-   docker cp 02_entrenamientos_retos.sql kinet-db:/tmp/
-   docker exec -it kinet-db sqlplus kinet/kinet123@localhost/FREEPDB1 "@/tmp/01_usuarios.sql"
-   docker exec -it kinet-db sqlplus kinet/kinet123@localhost/FREEPDB1 "@/tmp/02_entrenamientos_retos.sql"
+   docker cp kinet_bd.sql kinet-db:/tmp/
+   docker exec -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 kinet-db sqlplus system/admin123@localhost/FREEPDB1 "@/tmp/kinet_bd.sql"
    ```
+   Usuarios de base de datos que crea:
+
+   | Usuario | Contraseña | Uso |
+   |---|---|---|
+   | `KINET_OWNER` | (no inicia sesión) | Dueño de las tablas |
+   | `kinet_app` | `KinetApp2026` | El backend. Puede leer y escribir, pero en el libro de XP y el historial de rango solo puede insertar. |
+   | `kinet_admin` | `KinetAdmin2026` | Personas del equipo: DML completo, sin DDL |
+   | `kinet_reader` | `KinetLectura2026` | Reportes: solo lectura, sin datos personales |
 
 3. **Arrancar el backend:** abrir la carpeta `backend` en IntelliJ y ejecutar `KinetApplication`. Queda en `http://localhost:8080`.
 
@@ -28,26 +45,28 @@ Proyecto de Ingeniería de Software III, Universidad del Quindío.
 
 5. **Pruebas funcionales:** abrir `kinet.http` en IntelliJ y ejecutar las peticiones en orden.
 
-6. **Pruebas automáticas:** clic derecho sobre `src/test/java` → **Run 'All Tests'**, o `mvn test`. El reporte de cobertura queda en `target/site/jacoco/index.html`.
+6. **Pruebas automáticas:** clic derecho sobre `src/test/java` → **Run 'All Tests'**, o `mvn test`. Usan H2 en modo Oracle: no necesitan Docker.
 
-**Usuario administrador inicial:** `admin@kinet.com` / `Admin2026` (lo crea el script 02).
+**Cuentas de prueba:**
+- `admin@kinet.com` / `Admin2026`.
+- Con la contraseña `Kinet2026`:
+  - equipo: `entrenador@kinet.com`;
+  - jugadores: `laura@kinet.com`, `carlos@kinet.com`, `sofia@kinet.com`, `andres@kinet.com`, `pedro@kinet.com` (este último, bloqueado).
 
 ## Arquitectura
 
-Sigue la organización por capas de las guías del curso:
+Organización por capas, siguiendo las guías del curso:
 
 ```
 co.edu.uniquindio.kinet
-├── controllers     Reciben las peticiones HTTP y responden con ResponseDTO
-├── services        Interfaces con la lógica de negocio de cada proceso
-│   └── impl        Implementaciones (@Service)
+├── controllers     20 controladores: jugador, catálogos, admin, moderación, soporte y analítica
+├── services        Lógica de negocio (@Service). ReglasJuego reúne las constantes del juego
 ├── repositories    Acceso a datos con Spring Data JPA
-├── model           Entidades JPA y enumeraciones
-├── dto             Objetos de entrada y salida (records con validaciones)
-├── mappers         Conversión entidad a DTO con MapStruct
+├── model           29 entidades JPA y 20 enumeraciones
+├── dto             Records de entrada y salida con validaciones; cada uno sabe crearse desde su entidad: de(...)
 ├── exceptions      Excepciones propias y RestExceptionHandler
 ├── security        Generación y validación de tokens JWT
-└── config          Seguridad, CORS y Swagger
+└── config          Seguridad y permisos por rol, CORS, Swagger, reloj del servidor, ejecutor asíncrono y tareas programadas
 ```
 
 Todas las respuestas tienen la misma forma:
@@ -58,64 +77,50 @@ Todas las respuestas tienen la misma forma:
 { "error": true,  "respuesta": [ { "campo": "correo", "mensaje": "El correo no tiene un formato válido." } ] }
 ```
 
-## Endpoints
+## Endpoints por rol
 
-### Proceso 1: Usuario y Autenticación
-
-| Método | Ruta | Descripción |
+| Zona | Quién | Para qué |
 |---|---|---|
-| POST | `/api/auth/registro` | Crear cuenta de jugador |
-| POST | `/api/auth/login` | Iniciar sesión, devuelve el token |
-| POST | `/api/auth/recuperar-contrasena` | Enviar enlace de recuperación |
-| POST | `/api/auth/restablecer-contrasena` | Crear contraseña nueva con el enlace |
-| GET | `/api/usuarios/me` | Ver mi perfil |
-| PUT | `/api/usuarios/me` | Editar mi perfil |
-| PUT | `/api/usuarios/me/contrasena` | Cambiar mi contraseña |
-| GET | `/api/evaluacion/preguntas` | Preguntas de la evaluación de nivel |
-| POST | `/api/evaluacion` | Enviar respuestas y recibir el nivel inicial |
-| GET | `/api/evaluacion` | Ver mi resultado |
+| `/api/auth/**` | Público | Registro, login, recuperar y restablecer contraseña |
+| `/api/usuarios/me`, `/api/progreso`, `/api/notificaciones`, `/api/catalogos/**`, `/api/temporadas/activa` | Cualquier cuenta | Perfil, dashboard, bandeja, catálogos, ranking |
+| `/api/evaluacion`, `/api/entrenamientos` (cronómetro y evidencia), `/api/retos`, `/api/clanes`, `/api/matchmaking`, `/api/logros`, `/api/temporadas/activa/mia` | JUGADOR | Juego |
+| `/api/moderacion/**` | ENTRENADOR o ADMINISTRADOR | Entrenamientos pendientes, evidencias, cierre de clanes, descalificaciones |
+| `/api/soporte/**` | ADMINISTRADOR | Buscar cuentas, cambiar su estado, ajustes de XP |
+| `/api/analitica/**` | ADMINISTRADOR | Indicadores agregados |
+| `/api/admin/**` | ADMINISTRADOR | Actividades, reglas de XP, niveles, cuestionario, retos, temporadas, logros, roles |
 
-### Proceso 2: Entrenamientos y Retos
+El ADMINISTRADOR hace todo lo del equipo, pero no juega (las rutas de juego son solo de JUGADOR).
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| GET | `/api/actividades` | Tipos de actividad y su XP por minuto |
-| POST | `/api/entrenamientos` | Registrar un entrenamiento (se valida y calcula XP) |
-| GET | `/api/entrenamientos` | Mi historial |
-| GET | `/api/entrenamientos/{id}` | Ver un entrenamiento |
-| GET | `/api/progreso` | Dashboard: XP, nivel, racha, semana y retos |
-| GET | `/api/retos` | Retos disponibles para mi nivel |
-| GET | `/api/retos/{id}` | Detalle de un reto con mi avance |
-| POST | `/api/retos/{id}/participaciones` | Unirme a un reto |
-| GET | `/api/retos/mios` | Mis participaciones |
-| GET | `/api/notificaciones` | Mis notificaciones |
-| PATCH | `/api/notificaciones/{id}/leida` | Marcar como leída |
+El detalle de cada endpoint está en Swagger y en la sección 5 de `docs/MIGRACION_V2.md`.
 
-### Administración (rol ADMINISTRADOR)
+## Reglas principales
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| GET | `/api/admin/retos` | Todos los retos |
-| POST | `/api/admin/retos` | Crear un reto |
-| PATCH | `/api/admin/retos/{id}/estado?activo=false` | Activar o desactivar un reto |
-| PUT | `/api/admin/actividades/{codigo}` | Cambiar el XP por minuto de una actividad |
+- **XP:** minutos × `xp_por_minuto` de la regla vigente para la actividad e intensidad (REGLA_PUNTUACION). Todo cambio de XP queda en MOVIMIENTO_XP; `PERFIL_JUGADOR.xp_total` es el saldo.
+- **Nivel:** el mayor de NIVEL_PROGRESION cuyo XP requerido no supera el XP total (0, 100, 250, 450, 700…).
+- **Cronómetro:** "Iniciar" (`POST /api/entrenamientos/en-curso`) y "Finalizar" (`POST /api/entrenamientos/en-curso/fin`).
+  - Las horas las pone el servidor y la duración se calcula; el cliente nunca la envía.
+  - Solo puede haber un cronómetro en marcha por jugador. Si se olvida, se cierra solo a las 5 horas.
+  - Distancia y calorías son informativas: no dan XP ni cuentan para retos.
+- **Anti-trampa:** una sesión se RECHAZA si dura menos que el mínimo de la regla o más de 240 minutos, o si supera 4 sesiones o 300 minutos en el día. Entre 181 y 240 minutos queda PENDIENTE para un entrenador y exige el enlace de la actividad (ver Evidencia).
+- **Evidencia (RN-12):** una por entrenamiento, que puede ser una imagen (JPEG, PNG o WEBP de hasta 5 MB) o el enlace a la actividad en una app deportiva reconocida (`POST /api/entrenamientos/{id}/evidencia/enlace`).
+  - Da 10 XP y queda SIN_REVISAR como respaldo. Si un entrenador la rechaza, se revierte el bonus sin dejar el XP negativo.
+  - **Opcional** en entrenamientos y retos, con 48 horas para subirla.
+  - **Obligatoria, y solo con enlace**, en las sesiones de 181 a 240 minutos (4 horas para subirlo; sin él el entrenador no puede aprobarla y a las 4 horas se rechaza sola) y para que un entrenamiento cuente en enfrentamientos y competencias.
+  - Las apps aceptadas están en la tabla `PLATAFORMA_DEPORTE` (dominio y patrón de ruta; se agregan con un `INSERT`). El backend solo revisa la forma del enlace (https, dominio y ruta con id); no consulta a la app. Un mismo enlace no sirve dos veces.
+- **Retos:** cada participación es de un periodo (el día, la semana, el reto único o la temporada). Avanzan con los minutos o sesiones de los entrenamientos validados o, en los de REPETICIONES, con aportes manuales. Los de clan se completan con la suma del clan.
+- **Temporadas:** los puntos salen de los enfrentamientos de 24 horas:
+  - colocación: min(XP, 300) / 3;
+  - victoria: +25; empate: +10; derrota: −15.
 
-## Reglas de negocio del Proceso 2
-
-Están en `services/ReglasJuego.java` y tienen pruebas unitarias.
-
-- **XP** = minutos × XP por minuto de la actividad × intensidad (baja 1, media 1.5, alta 2).
-- **Niveles:** el nivel 2 pide 100 XP acumulados, el 3 pide 250, el 4 pide 450, el 5 pide 700. Cada nivel pide 50 XP más que el anterior.
-- **Racha:** sube 1 si entrena el día siguiente, se mantiene si ya entrenó ese día y vuelve a 1 si pasa un día sin entrenar. Si no entrenó ni hoy ni ayer, se muestra en 0.
-- **Anti-trampa:** se rechaza la sesión, guardando el motivo, si dura menos de 10 o más de 240 minutos, si está en el futuro o no ha terminado, si es de hace más de 48 horas, si se cruza con otra sesión, o si ese día ya hay 4 sesiones o se superarían 300 minutos.
-- **Retos:** se ofrecen según el nivel inicial de la evaluación. Cada entrenamiento validado que se registra mientras el reto está en curso suma minutos o sesiones (solo de la actividad pedida, si el reto la especifica). Al llegar a la meta se otorga el XP de recompensa. Si vence el plazo, queda vencido y se puede intentar de nuevo.
-- **Notificaciones:** se guardan en la bandeja del jugador. El envío por push está simulado en el log, listo para conectar el proveedor externo.
+  El rango sale de los puntos. Al cambiar de temporada se conserva un porcentaje de los puntos finales.
+- **Notificaciones:** se guardan y se envían en segundo plano después del commit (PENDIENTE → ENVIADA o FALLIDA).
 
 ## Variables de entorno para desplegar
 
 | Variable | Para qué |
 |---|---|
-| `DB_URL`, `DB_USUARIO`, `DB_CONTRASENA` | Conexión a Oracle |
+| `DB_URL`, `DB_USUARIO`, `DB_CONTRASENA` | Conexión a Oracle (por defecto `kinet_app`) |
+| `DB_ESQUEMA` | Esquema dueño de las tablas (por defecto `KINET_OWNER`) |
 | `KINET_JWT_SECRET` | Clave de firma de los tokens (mínimo 32 caracteres) |
 | `KINET_CORS_ORIGENES` | Dirección del frontend, separadas por coma si hay varias |
 | `KINET_FRONTEND_URL` | Base de los enlaces de recuperación |

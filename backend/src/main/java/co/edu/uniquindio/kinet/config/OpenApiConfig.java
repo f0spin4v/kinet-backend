@@ -17,8 +17,9 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("Kinet API")
-                        .version("1.0.0")
-                        .description("Procesos 1 (Usuario y Autenticación) y 2 (Entrenamientos y Retos) de Kinet."))
+                        .version("2.0.0")
+                        .description("Kinet v2: cuentas y roles, evaluación de nivel, entrenamientos con cronómetro y evidencias, XP y niveles, retos, "
+                                + "clanes, temporadas competitivas, matchmaking, logros, notificaciones, moderación, soporte y analítica."))
                 .addSecurityItem(new SecurityRequirement().addList("bearer"))
                 .components(new Components().addSecuritySchemes("bearer",
                         new SecurityScheme().type(SecurityScheme.Type.HTTP).scheme("bearer").bearerFormat("JWT")));

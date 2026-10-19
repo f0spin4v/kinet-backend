@@ -5,6 +5,7 @@ import co.edu.uniquindio.kinet.model.enums.EstadoUsuario;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -21,47 +22,47 @@ public class Usuario {
     @Column(name = "id_usuario")
     private Long id;
 
-    @Column(name = "nombre", nullable = false, length = 100)
-    private String nombre;
-
-    @Column(name = "correo", nullable = false, unique = true, length = 150)
-    private String correo;
-
-    @Column(name = "contrasena_hash", nullable = false, length = 100)
-    private String contrasenaHash;
-
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "id_rol", nullable = false)
     private Rol rol;
 
+    @Column(name = "nombres", nullable = false, length = 80)
+    private String nombres;
+
+    @Column(name = "apellidos", nullable = false, length = 80)
+    private String apellidos;
+
+    @Column(name = "correo", nullable = false, unique = true, length = 120)
+    private String correo;
+
+    @Column(name = "password_hash", nullable = false, length = 255)
+    private String passwordHash;
+
     @Builder.Default
     @Enumerated(EnumType.STRING)
-    @Column(name = "estado", nullable = false, length = 15)
+    @Column(name = "estado", nullable = false, length = 10)
     private EstadoUsuario estado = EstadoUsuario.ACTIVO;
 
     @Builder.Default
     @Convert(converter = SiNoConverter.class)
-    @Column(name = "acepta_datos", nullable = false, length = 1)
-    private Boolean aceptaDatos = false;
+    @Column(name = "acepta_politica_datos", nullable = false, length = 1)
+    private Boolean aceptaPoliticaDatos = false;
 
-    @Column(name = "fecha_acepta_datos")
-    private LocalDateTime fechaAceptaDatos;
+    @Column(name = "fecha_acepta_politica")
+    private LocalDate fechaAceptaPolitica;
 
     @Builder.Default
     @Column(name = "fecha_registro", nullable = false)
     private LocalDateTime fechaRegistro = LocalDateTime.now();
 
-    @Column(name = "ultimo_acceso")
-    private LocalDateTime ultimoAcceso;
-
-    @OneToOne(mappedBy = "usuario", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
-    private Perfil perfil;
+    @OneToOne(mappedBy = "usuario", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private PerfilJugador perfil;
 
     public boolean estaActivo() {
         return estado == EstadoUsuario.ACTIVO;
     }
 
-    public boolean esAdministrador() {
-        return rol != null && Rol.ADMINISTRADOR.equals(rol.getNombre());
+    public boolean tieneRol(String nombreRol) {
+        return rol != null && nombreRol.equals(rol.getNombre());
     }
 }
