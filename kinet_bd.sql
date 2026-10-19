@@ -311,7 +311,9 @@ CREATE TABLE NIVEL_PROGRESION (
 -- Sesión medida con el cronómetro de la app. "Iniciar" crea la fila EN_CURSO con la hora del servidor;
 -- "Finalizar" guarda fin y duración (también hora del servidor) y la pasa por el anti-trampa:
 -- VALIDADO, PENDIENTE (revisión de un entrenador) o RECHAZADO. El XP que dio queda en MOVIMIENTO_XP.
--- distancia_km y calorias_kcal las anota el jugador: son informativas, no dan XP ni cuentan para retos.
+-- distancia_km, calorias_kcal, series, repeticiones y peso_kg los anota el jugador según la actividad (distancia en
+-- running, ciclismo y natación; series, repeticiones y peso en fuerza y calistenia): son informativos, no dan XP
+-- ni cuentan para retos.
 CREATE TABLE ENTRENAMIENTO (
     id_entrenamiento      NUMBER(10) GENERATED ALWAYS AS IDENTITY,
     id_usuario            NUMBER(10) NOT NULL,
@@ -322,6 +324,9 @@ CREATE TABLE ENTRENAMIENTO (
     intensidad            VARCHAR2(10),
     distancia_km          NUMBER(7,2),
     calorias_kcal         NUMBER(6),
+    series                NUMBER(3),
+    repeticiones          NUMBER(4),
+    peso_kg               NUMBER(6,2),
     notas                 VARCHAR2(500),
     estado_validacion     VARCHAR2(10) DEFAULT 'EN_CURSO' NOT NULL,
     motivo_rechazo        VARCHAR2(200),
@@ -340,7 +345,10 @@ CREATE TABLE ENTRENAMIENTO (
     CONSTRAINT ck_entrenamiento_rechazo CHECK (estado_validacion <> 'RECHAZADO' OR motivo_rechazo IS NOT NULL),
     CONSTRAINT ck_entrenamiento_valores CHECK ((duracion_min IS NULL OR duracion_min >= 0)
                                                AND (distancia_km IS NULL OR distancia_km >= 0)
-                                               AND (calorias_kcal IS NULL OR calorias_kcal >= 0)),
+                                               AND (calorias_kcal IS NULL OR calorias_kcal >= 0)
+                                               AND (series IS NULL OR series >= 1)
+                                               AND (repeticiones IS NULL OR repeticiones >= 1)
+                                               AND (peso_kg IS NULL OR peso_kg >= 0)),
     CONSTRAINT ck_entrenamiento_fechas CHECK (fecha_hora_fin IS NULL OR fecha_hora_fin > fecha_hora_inicio)
 );
 CREATE INDEX ix_entrenamiento_usuario_inicio ON ENTRENAMIENTO (id_usuario, fecha_hora_inicio);
@@ -1070,15 +1078,18 @@ COMMIT;
 -- Fechas relativas a SYSDATE. El XP de cada entrenamiento se calcula con REGLA_PUNTUACION y
 -- PERFIL_JUGADOR.xp_total se recalcula al final como la suma de MOVIMIENTO_XP, así que siempre cuadran.
 --
---   laura@kinet.com      JUGADOR      INTERMEDIO 1000 XP (nivel 6), racha 3, en el clan, en cola, con evidencia,
---                                                    ganó un duelo y organiza una competencia grupal
---   carlos@kinet.com     JUGADOR      AVANZADO   1284 XP (nivel 6), líder del clan, 1 PENDIENTE con evidencia
---   sofia@kinet.com      JUGADOR      INICIACION  100 XP (nivel 2), colocación en curso, 1 rechazado,
---                                                    tiene una invitación pendiente
---   andres@kinet.com     JUGADOR      sin evaluación (recién registrado)
---   pedro@kinet.com      JUGADOR      cuenta BLOQUEADA
---   entrenador@kinet.com ENTRENADOR   revisa entrenamientos pendientes y evidencias
--- Todos con contraseña: Kinet2026
+-- Cuentas para entrar (una por rol):
+--   laura@kinet.com      JUGADOR       INTERMEDIO, nivel 6, racha 3, en el clan, con evidencia, retos en curso,
+--                                      un duelo ganado, una competencia grupal organizada y una invitación
+--                                      pendiente a un torneo
+--   entrenador@kinet.com ENTRENADOR    revisa la sesión pendiente de Carlos y las evidencias
+--   admin@kinet.com      ADMINISTRADOR todo lo del equipo (contraseña Admin2026)
+-- Más cuentas (todas Kinet2026): marta@, diego@, valentina@, andres@, camila@ (jugadores activos con clanes, ranking,
+--   entrenamientos de cada actividad y competencias), juan@ (BLOQUEADO), lucia@ (INACTIVO) y entrenador2@ (ENTRENADOR).
+-- Rivales de apoyo (para el clan, el ranking, los enfrentamientos y las competencias de Laura):
+--   carlos@kinet.com     JUGADOR       AVANZADO, líder del clan, 1 sesión PENDIENTE con enlace de Strava
+--   sofia@kinet.com      JUGADOR       INICIACION, colocación en curso, 1 rechazado, invitaciones pendientes
+-- Todos con contraseña: Kinet2026 (salvo el administrador)
 -- =====================================================================
 -- Funciones auxiliares temporales (se borran al final de esta sección)
 CREATE OR REPLACE FUNCTION tmp_ts(p_dias NUMBER, p_horas NUMBER) RETURN TIMESTAMP IS
@@ -1119,12 +1130,20 @@ DECLARE
     c_png  CONSTANT VARCHAR2(200) := '89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C4890000000D49444154'
                                      || '78DA636460F85F0F0002870180EB47BA920000000049454E44AE426082';
     v_t0 NUMBER; v_t1 NUMBER;
-    v_laura NUMBER; v_carlos NUMBER; v_sofia NUMBER; v_andres NUMBER; v_pedro NUMBER; v_otro NUMBER;
+    v_laura NUMBER; v_carlos NUMBER; v_sofia NUMBER; v_otro NUMBER;
     v_clan NUMBER; v_evidencia NUMBER;
     l1 NUMBER; l2 NUMBER; l3 NUMBER; l4 NUMBER; l6 NUMBER;
     c1 NUMBER; c2 NUMBER; c3 NUMBER; c4 NUMBER; c5 NUMBER;
     s1 NUMBER;
     v_part NUMBER; v_enf NUMBER; v_comp NUMBER;
+    -- datos de prueba adicionales
+    v_marta NUMBER; v_diego NUMBER; v_vale NUMBER; v_andres NUMBER; v_cami NUMBER; v_juan NUMBER; v_lucia NUMBER;
+    v_ent2 NUMBER; v_clan2 NUMBER; v_clan3 NUMBER;
+    m1 NUMBER; m2 NUMBER; m3 NUMBER; m4 NUMBER; m5 NUMBER; m6 NUMBER;
+    d1 NUMBER; d2 NUMBER; d3 NUMBER; d4 NUMBER; d5 NUMBER; d6 NUMBER; d7 NUMBER;
+    a1 NUMBER; a2 NUMBER; a3 NUMBER; a4 NUMBER; a5 NUMBER;
+    w1 NUMBER; w2 NUMBER; w3 NUMBER; w4 NUMBER; w5 NUMBER;
+    k1 NUMBER; k2 NUMBER; z1 NUMBER; z2 NUMBER;
 
     FUNCTION f_usuario(p_rol VARCHAR2, p_nombres VARCHAR2, p_apellidos VARCHAR2, p_correo VARCHAR2, p_gamertag VARCHAR2,
                        p_estado VARCHAR2, p_dias_registro NUMBER, p_nacimiento DATE) RETURN NUMBER IS
@@ -1282,15 +1301,12 @@ BEGIN
     v_laura  := f_usuario('JUGADOR', 'Laura', 'Gómez', 'laura@kinet.com', 'laura_runner', 'ACTIVO', 25, DATE '2001-04-15');
     v_carlos := f_usuario('JUGADOR', 'Carlos', 'Ramírez', 'carlos@kinet.com', 'carlos_pro', 'ACTIVO', 120, DATE '1998-09-02');
     v_sofia  := f_usuario('JUGADOR', 'Sofía', 'Martínez', 'sofia@kinet.com', 'sofi_fit', 'ACTIVO', 3, DATE '2004-01-20');
-    v_andres := f_usuario('JUGADOR', 'Andrés', 'López', 'andres@kinet.com', 'andres_l', 'ACTIVO', 1, NULL);
-    v_pedro  := f_usuario('JUGADOR', 'Pedro', 'Castaño', 'pedro@kinet.com', 'pedro_c', 'BLOQUEADO', 40, DATE '1995-07-11');
     v_otro   := f_usuario('ENTRENADOR', 'Mónica', 'Rivas', 'entrenador@kinet.com', 'entrenador_monica', 'ACTIVO', 60, NULL);
 
     -- ---------- Evaluaciones (una opción por pregunta; la pregunta 3 pesa doble) ----------
     p_evaluacion(v_laura, 25, 'INTERMEDIO', 'INTERMEDIO', 'INTERMEDIO', 'AVANZADO', 'INICIACION', 'INTERMEDIO');
     p_evaluacion(v_carlos, 120, 'AVANZADO', 'ATLETA', 'AVANZADO', 'AVANZADO', 'AVANZADO', 'AVANZADO');
     p_evaluacion(v_sofia, 3, 'INICIACION', 'INICIACION', 'INICIACION', 'INTERMEDIO', 'INICIACION', 'INICIACION');
-    p_evaluacion(v_pedro, 40, 'INTERMEDIO', 'INTERMEDIO', 'INTERMEDIO', 'INTERMEDIO', 'INTERMEDIO', 'INTERMEDIO');
 
     -- ---------- Entrenamientos ----------
     -- Laura: 120 + 135 + 180 + 180 + 90 = 705 XP; racha de 3 días (-3, -2, -1)
@@ -1409,6 +1425,14 @@ BEGIN
     p_invitado(v_comp, v_carlos, 'ACEPTADO', tmp_ts(-1, 9), tmp_ts(-1, 10));
     p_invitado(v_comp, v_sofia, 'INVITADO', tmp_ts(-1, 9));
 
+    -- Torneo de 3 rondas programado para dentro de 2 días: Carlos lo organiza (aceptó) e invitó a Laura y a Sofía.
+    INSERT INTO COMPETENCIA (id_creador, tipo, nombre, duracion_ronda_horas, fecha_creacion, fecha_inicio)
+    VALUES (v_carlos, 'TORNEO', 'Torneo del Quindío', 24, tmp_ts(-1, 8), tmp_ts(2, 8))
+    RETURNING id_competencia INTO v_comp;
+    p_invitado(v_comp, v_carlos, 'ACEPTADO', tmp_ts(-1, 8), tmp_ts(-1, 8));
+    p_invitado(v_comp, v_laura, 'INVITADO', tmp_ts(-1, 8));
+    p_invitado(v_comp, v_sofia, 'INVITADO', tmp_ts(-1, 8));
+
     -- Duelo rechazado: Sofía retó a Carlos y él no aceptó.
     INSERT INTO COMPETENCIA (id_creador, tipo, nombre, estado, duracion_ronda_horas, fecha_creacion)
     VALUES (v_sofia, 'DUELO', 'Primer duelo', 'CANCELADA', 24, tmp_ts(-2, 12))
@@ -1416,9 +1440,176 @@ BEGIN
     p_invitado(v_comp, v_sofia, 'ACEPTADO', tmp_ts(-2, 12), tmp_ts(-2, 12));
     p_invitado(v_comp, v_carlos, 'RECHAZADO', tmp_ts(-2, 12), tmp_ts(-2, 13));
 
-    -- Laura espera rival
-    INSERT INTO SOLICITUD_MATCHMAKING (id_usuario, id_temporada, estado, fecha_solicitud)
-    VALUES (v_laura, v_t1, 'EN_COLA', CAST(SYSTIMESTAMP - INTERVAL '1' HOUR AS TIMESTAMP));
+    -- =================================================================================================
+    -- MÁS DATOS DE PRUEBA (todos con contraseña Kinet2026): jugadores de distintos niveles y actividades,
+    -- otro entrenador, cuentas bloqueada e inactiva, dos clanes más, ranking, enfrentamientos y competencias.
+    -- =================================================================================================
+    v_marta  := f_usuario('JUGADOR', 'Marta', 'Cardona', 'marta@kinet.com', 'marta_trail', 'ACTIVO', 70, DATE '1995-06-11');
+    v_diego  := f_usuario('JUGADOR', 'Diego', 'Herrera', 'diego@kinet.com', 'diego_lift', 'ACTIVO', 45, DATE '1999-02-23');
+    v_vale   := f_usuario('JUGADOR', 'Valentina', 'Ríos', 'valentina@kinet.com', 'vale_swim', 'ACTIVO', 30, DATE '2002-10-05');
+    v_andres := f_usuario('JUGADOR', 'Andrés', 'Mejía', 'andres@kinet.com', 'andres_bici', 'ACTIVO', 90, DATE '1992-12-30');
+    v_cami   := f_usuario('JUGADOR', 'Camila', 'Ortiz', 'camila@kinet.com', 'cami_cali', 'ACTIVO', 8, DATE '2005-07-19');
+    v_juan   := f_usuario('JUGADOR', 'Juan', 'Torres', 'juan@kinet.com', 'juan_bloq', 'BLOQUEADO', 50, DATE '1997-03-08');
+    v_lucia  := f_usuario('JUGADOR', 'Lucía', 'Pardo', 'lucia@kinet.com', 'lucia_inactiva', 'INACTIVO', 40, DATE '2000-09-14');
+    v_ent2   := f_usuario('ENTRENADOR', 'Pedro', 'Salazar', 'entrenador2@kinet.com', 'entrenador_pedro', 'ACTIVO', 50, NULL);
+
+    p_evaluacion(v_marta, 70, 'AVANZADO', 'AVANZADO', 'INTERMEDIO', 'AVANZADO', 'AVANZADO', 'AVANZADO');
+    p_evaluacion(v_diego, 45, 'INTERMEDIO', 'INTERMEDIO', 'INTERMEDIO', 'AVANZADO', 'INTERMEDIO', 'INTERMEDIO');
+    p_evaluacion(v_vale, 30, 'INTERMEDIO', 'INICIACION', 'INTERMEDIO', 'INTERMEDIO', 'INICIACION', 'INTERMEDIO');
+    p_evaluacion(v_andres, 90, 'AVANZADO', 'AVANZADO', 'AVANZADO', 'AVANZADO', 'INTERMEDIO', 'AVANZADO');
+    p_evaluacion(v_cami, 8, 'INICIACION', 'INICIACION', 'INICIACION', 'INICIACION', 'INTERMEDIO', 'INICIACION');
+    p_evaluacion(v_juan, 50, 'INTERMEDIO', 'INICIACION', 'INTERMEDIO', 'INTERMEDIO', 'INTERMEDIO', 'INTERMEDIO');
+    p_evaluacion(v_lucia, 40, 'INICIACION', 'INICIACION', 'INICIACION', 'INTERMEDIO', 'INICIACION', 'INICIACION');
+
+    -- Entrenamientos (todos dentro de la Temporada 1)
+    m1 := f_entreno(v_marta, 'RUNNING', tmp_ts(-17, 6), 50, 'ALTA', p_km => 9.5, p_kcal => 610);
+    m2 := f_entreno(v_marta, 'RUNNING', tmp_ts(-14, 6), 45, 'MEDIA', p_km => 7, p_kcal => 470);
+    m3 := f_entreno(v_marta, 'RUNNING', tmp_ts(-10, 6), 60, 'ALTA', p_km => 12, p_kcal => 800, p_notas => 'Tirada larga por el sendero');
+    m4 := f_entreno(v_marta, 'FUERZA', tmp_ts(-7, 18), 40, 'MEDIA', p_kcal => 260);
+    m5 := f_entreno(v_marta, 'RUNNING', tmp_ts(-4, 6), 55, 'ALTA', p_km => 10, p_kcal => 700);
+    m6 := f_entreno(v_marta, 'RUNNING', tmp_ts(-1, 6), 40, 'MEDIA', p_km => 6.5, p_kcal => 430);
+
+    d1 := f_entreno(v_diego, 'FUERZA', tmp_ts(-16, 18), 60, 'ALTA', p_kcal => 420, p_notas => 'Sentadilla y peso muerto');
+    d2 := f_entreno(v_diego, 'FUERZA', tmp_ts(-13, 18), 55, 'MEDIA', p_kcal => 360);
+    d3 := f_entreno(v_diego, 'FUERZA', tmp_ts(-9, 18), 70, 'ALTA', p_kcal => 500);
+    d4 := f_entreno(v_diego, 'FUERZA', tmp_ts(-5, 18), 50, 'MEDIA', p_kcal => 340);
+    d5 := f_entreno(v_diego, 'FUERZA', tmp_ts(-2, 18), 65, 'ALTA', p_kcal => 450);
+    d6 := f_entreno(v_diego, 'FUERZA', tmp_ts(-1, 17), 200, 'MEDIA', 'PENDIENTE', p_notas => 'Doble jornada de fuerza');
+    d7 := f_entreno(v_diego, 'OTRO', tmp_ts(-1, 21), 4, 'BAJA', 'RECHAZADO',
+                    'La sesión debe durar al menos 10 minutos para contar.');
+    UPDATE ENTRENAMIENTO SET series = 5, repeticiones = 5, peso_kg = 90 WHERE id_entrenamiento = d1;
+    UPDATE ENTRENAMIENTO SET series = 4, repeticiones = 10, peso_kg = 60 WHERE id_entrenamiento = d2;
+    UPDATE ENTRENAMIENTO SET series = 5, repeticiones = 3, peso_kg = 110 WHERE id_entrenamiento = d3;
+    UPDATE ENTRENAMIENTO SET series = 3, repeticiones = 12, peso_kg = 50 WHERE id_entrenamiento = d4;
+    UPDATE ENTRENAMIENTO SET series = 4, repeticiones = 8, peso_kg = 85 WHERE id_entrenamiento = d5;
+    UPDATE ENTRENAMIENTO SET series = 5, repeticiones = 5, peso_kg = 80 WHERE id_entrenamiento = m4;
+
+    w1 := f_entreno(v_vale, 'NATACION', tmp_ts(-15, 7), 45, 'MEDIA', p_km => 1.5, p_kcal => 400);
+    w2 := f_entreno(v_vale, 'NATACION', tmp_ts(-11, 7), 50, 'MEDIA', p_km => 1.8, p_kcal => 440);
+    w3 := f_entreno(v_vale, 'NATACION', tmp_ts(-8, 7), 40, 'ALTA', p_km => 1.6, p_kcal => 470);
+    w4 := f_entreno(v_vale, 'NATACION', tmp_ts(-3, 7), 60, 'MEDIA', p_km => 2.2, p_kcal => 520);
+    w5 := f_entreno(v_vale, 'NATACION', tmp_ts(-1, 7), 45, 'ALTA', p_km => 1.9, p_kcal => 500);
+
+    a1 := f_entreno(v_andres, 'CICLISMO', tmp_ts(-18, 6), 120, 'ALTA', p_km => 55, p_kcal => 1500);
+    a2 := f_entreno(v_andres, 'CICLISMO', tmp_ts(-14, 6), 90, 'ALTA', p_km => 40, p_kcal => 1100);
+    a3 := f_entreno(v_andres, 'CICLISMO', tmp_ts(-10, 6), 150, 'MEDIA', p_km => 62, p_kcal => 1600);
+    a4 := f_entreno(v_andres, 'CICLISMO', tmp_ts(-6, 6), 100, 'ALTA', p_km => 45, p_kcal => 1250);
+    a5 := f_entreno(v_andres, 'CICLISMO', tmp_ts(-2, 6), 110, 'MEDIA', p_km => 48, p_kcal => 1200);
+
+    k1 := f_entreno(v_cami, 'CALISTENIA', tmp_ts(-3, 19), 25, 'BAJA', p_kcal => 140);
+    k2 := f_entreno(v_cami, 'CALISTENIA', tmp_ts(-1, 19), 30, 'MEDIA', p_kcal => 190, p_notas => 'Primeras dominadas');
+    UPDATE ENTRENAMIENTO SET series = 3, repeticiones = 8 WHERE id_entrenamiento = k1;
+    UPDATE ENTRENAMIENTO SET series = 4, repeticiones = 10 WHERE id_entrenamiento = k2;
+
+    z1 := f_entreno(v_juan, 'RUNNING', tmp_ts(-18, 7), 30, 'MEDIA', p_km => 4, p_kcal => 250);
+    z2 := f_entreno(v_lucia, 'CICLISMO', tmp_ts(-17, 8), 40, 'BAJA', p_km => 12, p_kcal => 220);
+
+    -- Enlace de Strava de la sesión larga de Diego (espera revisión del entrenador)
+    INSERT INTO EVIDENCIA_ENTRENAMIENTO (id_entrenamiento, url_externa, id_plataforma, fecha_subida)
+    VALUES (d6, 'https://www.strava.com/activities/10345678901',
+            (SELECT id_plataforma FROM PLATAFORMA_DEPORTE WHERE dominio = 'strava.com'), tmp_ts(-1, 21.5));
+    -- Evidencia de Marta con enlace de Garmin, aún sin revisar
+    INSERT INTO EVIDENCIA_ENTRENAMIENTO (id_entrenamiento, url_externa, id_plataforma, fecha_subida)
+    VALUES (m3, 'https://connect.garmin.com/modern/activity/9876543210',
+            (SELECT id_plataforma FROM PLATAFORMA_DEPORTE WHERE dominio = 'connect.garmin.com'), tmp_ts(-10, 8));
+
+    -- Clanes
+    INSERT INTO CLAN (nombre, descripcion, capacidad_max, fecha_creacion)
+    VALUES ('Madrugadores', 'Entrenamos antes de las 7 a. m.', 5, tmp_ts(-16, 7)) RETURNING id_clan INTO v_clan2;
+    INSERT INTO MEMBRESIA_CLAN (id_clan, id_usuario, rol_clan, fecha_ingreso) VALUES (v_clan2, v_marta, 'LIDER', tmp_ts(-16, 7));
+    INSERT INTO MEMBRESIA_CLAN (id_clan, id_usuario, rol_clan, fecha_ingreso) VALUES (v_clan2, v_vale, 'MIEMBRO', tmp_ts(-14, 8));
+    INSERT INTO MEMBRESIA_CLAN (id_clan, id_usuario, rol_clan, fecha_ingreso) VALUES (v_clan2, v_cami, 'MIEMBRO', tmp_ts(-2, 20));
+    INSERT INTO CLAN (nombre, descripcion, capacidad_max, fecha_creacion)
+    VALUES ('Fuerza Bruta', 'Pesas, barras y mucha disciplina', 10, tmp_ts(-15, 18)) RETURNING id_clan INTO v_clan3;
+    INSERT INTO MEMBRESIA_CLAN (id_clan, id_usuario, rol_clan, fecha_ingreso) VALUES (v_clan3, v_diego, 'LIDER', tmp_ts(-15, 18));
+    INSERT INTO MEMBRESIA_CLAN (id_clan, id_usuario, rol_clan, fecha_ingreso) VALUES (v_clan3, v_andres, 'MIEMBRO', tmp_ts(-12, 9));
+
+    -- Retos: "Primer paso" completado por todos los que ya entrenaron
+    v_part := f_participar(v_marta, 'Primer paso', tmp_ts(-18, 8), 1, 'COMPLETADO', tmp_ts(-17, 6.9));
+    p_aporte(v_part, m1, 1);
+    v_part := f_participar(v_diego, 'Primer paso', tmp_ts(-17, 8), 1, 'COMPLETADO', tmp_ts(-16, 19.1));
+    p_aporte(v_part, d1, 1);
+    v_part := f_participar(v_vale, 'Primer paso', tmp_ts(-16, 8), 1, 'COMPLETADO', tmp_ts(-15, 7.9));
+    p_aporte(v_part, w1, 1);
+    v_part := f_participar(v_andres, 'Primer paso', tmp_ts(-19, 8), 1, 'COMPLETADO', tmp_ts(-18, 8.1));
+    p_aporte(v_part, a1, 1);
+    v_part := f_participar(v_cami, 'Primer paso', tmp_ts(-4, 8), 1, 'COMPLETADO', tmp_ts(-3, 19.5));
+    p_aporte(v_part, k1, 1);
+    -- En curso
+    v_part := f_participar(v_marta, 'Constancia de temporada', tmp_ts(-17, 8), 5, 'EN_CURSO');
+    p_aporte(v_part, m1, 1); p_aporte(v_part, m2, 1); p_aporte(v_part, m3, 1); p_aporte(v_part, m5, 1); p_aporte(v_part, m6, 1);
+    v_part := f_participar(v_diego, 'Constancia de temporada', tmp_ts(-16, 8), 5, 'EN_CURSO');
+    p_aporte(v_part, d1, 1); p_aporte(v_part, d2, 1); p_aporte(v_part, d3, 1); p_aporte(v_part, d4, 1); p_aporte(v_part, d5, 1);
+    v_part := f_participar(v_andres, 'Modo élite', tmp_ts(-18, 9), 480, 'EN_CURSO');
+    p_aporte(v_part, a1, 120); p_aporte(v_part, a2, 90); p_aporte(v_part, a3, 150); p_aporte(v_part, a4, 100); p_aporte(v_part, a5, 20);
+    v_part := f_participar(v_cami, 'Arranque', tmp_ts(-4, 9), 55, 'EN_CURSO');
+    p_aporte(v_part, k1, 25); p_aporte(v_part, k2, 30);
+    v_part := f_participar(v_marta, 'Minutos en equipo', tmp_ts(-16, 9), 80, 'EN_CURSO', NULL, v_clan2);
+    p_aporte(v_part, m5, 55); p_aporte(v_part, m6, 25);
+    v_part := f_participar(v_vale, 'Minutos en equipo', tmp_ts(-14, 9), 105, 'EN_CURSO', NULL, v_clan2);
+    p_aporte(v_part, w4, 60); p_aporte(v_part, w5, 45);
+
+    -- Logros
+    p_logro(v_marta, 'Primeros pasos', tmp_ts(-17, 6.91));
+    p_logro(v_marta, 'Espíritu de equipo', tmp_ts(-16, 7));
+    p_logro(v_diego, 'Primeros pasos', tmp_ts(-16, 19.11));
+    p_logro(v_diego, 'Espíritu de equipo', tmp_ts(-15, 18));
+    p_logro(v_vale, 'Primeros pasos', tmp_ts(-15, 7.91));
+    p_logro(v_vale, 'Espíritu de equipo', tmp_ts(-14, 8));
+    p_logro(v_andres, 'Primeros pasos', tmp_ts(-18, 8.11));
+    p_logro(v_andres, 'Espíritu de equipo', tmp_ts(-12, 9));
+    p_logro(v_cami, 'Primeros pasos', tmp_ts(-3, 19.51));
+
+    -- Ranking de la temporada y colocaciones
+    p_participacion_temporada(v_marta, v_t1, 0, 260, tmp_ts(-17, 8));
+    p_cambio_rango(v_marta, v_t1, 0, 260, tmp_ts(-8, 6));
+    p_participacion_temporada(v_diego, v_t1, 0, 150, tmp_ts(-16, 8));
+    p_cambio_rango(v_diego, v_t1, 0, 150, tmp_ts(-7, 18));
+    p_participacion_temporada(v_vale, v_t1, 0, 120, tmp_ts(-15, 8));
+    p_cambio_rango(v_vale, v_t1, 0, 120, tmp_ts(-6, 7));
+    p_participacion_temporada(v_andres, v_t1, 200, 340, tmp_ts(-18, 9));
+    p_cambio_rango(v_andres, v_t1, 200, 340, tmp_ts(-9, 6));
+    p_enfrentamiento('COLOCACION', 'FINALIZADO', tmp_ts(-17, 8), v_marta, 330, 'COMPLETADO');
+    p_enfrentamiento('COLOCACION', 'FINALIZADO', tmp_ts(-16, 8), v_diego, 300, 'COMPLETADO');
+    p_enfrentamiento('COLOCACION', 'FINALIZADO', tmp_ts(-15, 8), v_vale, 240, 'COMPLETADO');
+    p_enfrentamiento('ESTANDAR', 'FINALIZADO', tmp_ts(-9, 6), v_andres, 400, 'VICTORIA', v_marta, 310, 'DERROTA');
+    p_enfrentamiento('ESTANDAR', 'FINALIZADO', tmp_ts(-7, 18), v_diego, 350, 'VICTORIA', v_vale, 200, 'DERROTA');
+
+    -- Competencias: una grupal terminada y un duelo pendiente
+    INSERT INTO COMPETENCIA (id_creador, tipo, nombre, estado, duracion_ronda_horas, ronda_actual, fecha_creacion,
+                             fecha_inicio, fecha_fin)
+    VALUES (v_marta, 'GRUPAL', 'Maratón de otoño', 'FINALIZADA', 48, 1, tmp_ts(-12, 9), tmp_ts(-10, 0), tmp_ts(-8, 0))
+    RETURNING id_competencia INTO v_comp;
+    p_invitado(v_comp, v_marta, 'ACEPTADO', tmp_ts(-12, 9), tmp_ts(-12, 9), 340, 1, 'GANADOR');
+    p_invitado(v_comp, v_andres, 'ACEPTADO', tmp_ts(-12, 9), tmp_ts(-12, 10), 290, 2, 'PERDEDOR');
+    p_invitado(v_comp, v_vale, 'ACEPTADO', tmp_ts(-12, 9), tmp_ts(-11, 8), 150, 3, 'PERDEDOR');
+    INSERT INTO MOVIMIENTO_XP (id_usuario, id_temporada, id_competencia, origen, cantidad, fecha_movimiento)
+    VALUES (v_marta, v_t1, v_comp, 'COMPETENCIA', 50, tmp_ts(-8, 0));
+    INSERT INTO COMPETENCIA (id_creador, tipo, nombre, duracion_ronda_horas, fecha_creacion)
+    VALUES (v_diego, 'DUELO', 'Duelo de pesas', 24, tmp_ts(-1, 12)) RETURNING id_competencia INTO v_comp;
+    p_invitado(v_comp, v_diego, 'ACEPTADO', tmp_ts(-1, 12), tmp_ts(-1, 12));
+    p_invitado(v_comp, v_andres, 'INVITADO', tmp_ts(-1, 12));
+
+    -- Notificaciones
+    p_aviso(v_marta, 'COMPETENCIA', 'Ganaste la competencia', 'Ganaste "Maratón de otoño". +50 XP.', tmp_ts(-8, 0));
+    p_aviso(v_marta, 'MATCHMAKING', 'Enfrentamiento terminado', 'Perdiste contra andres_bici.', tmp_ts(-8, 6));
+    p_aviso(v_marta, 'VALIDACION', 'Evidencia recibida', 'Tu enlace quedó pendiente de revisión.', tmp_ts(-10, 8), 'N');
+    p_aviso(v_diego, 'VALIDACION', 'Entrenamiento en revisión',
+            'Tu sesión de 200 minutos quedó pendiente de revisión por un entrenador.', tmp_ts(-1, 21.6), 'N');
+    p_aviso(v_diego, 'VALIDACION', 'Entrenamiento rechazado',
+            'Tu entrenamiento no fue validado: La sesión debe durar al menos 10 minutos para contar.', tmp_ts(-1, 21.1), 'N');
+    p_aviso(v_andres, 'COMPETENCIA', 'Nueva invitación', 'diego_lift te invitó a "Duelo de pesas".', tmp_ts(-1, 12), 'N');
+    p_aviso(v_andres, 'MATCHMAKING', 'Enfrentamiento terminado', 'Ganaste contra marta_trail.', tmp_ts(-8, 6));
+    p_aviso(v_cami, 'LOGRO', 'Logro desbloqueado', 'Primeros pasos. +20 XP.', tmp_ts(-3, 19.52), 'N');
+    p_aviso(v_cami, 'CLAN', 'Nuevo miembro', 'Te uniste a Madrugadores.', tmp_ts(-2, 20));
+    p_aviso(v_vale, 'CLAN', 'Nuevo miembro', 'camila se unió a Madrugadores.', tmp_ts(-2, 20), 'N');
+
+    -- Rachas
+    UPDATE PERFIL_JUGADOR SET racha_actual = 1, racha_maxima = 3, fecha_ultima_actividad = TRUNC(SYSDATE) - 1 WHERE id_usuario = v_marta;
+    UPDATE PERFIL_JUGADOR SET racha_actual = 2, racha_maxima = 2, fecha_ultima_actividad = TRUNC(SYSDATE) - 1 WHERE id_usuario = v_diego;
+    UPDATE PERFIL_JUGADOR SET racha_actual = 1, racha_maxima = 1, fecha_ultima_actividad = TRUNC(SYSDATE) - 1 WHERE id_usuario = v_vale;
+    UPDATE PERFIL_JUGADOR SET racha_actual = 1, racha_maxima = 2, fecha_ultima_actividad = TRUNC(SYSDATE) - 2 WHERE id_usuario = v_andres;
+    UPDATE PERFIL_JUGADOR SET racha_actual = 2, racha_maxima = 2, fecha_ultima_actividad = TRUNC(SYSDATE) - 1 WHERE id_usuario = v_cami;
 
     -- ---------- Racha y XP total (suma del libro de movimientos) ----------
     UPDATE PERFIL_JUGADOR SET racha_actual = 3, racha_maxima = 3, fecha_ultima_actividad = TRUNC(SYSDATE) - 1
@@ -1454,6 +1645,8 @@ BEGIN
     p_aviso(v_laura, 'COMPETENCIA', 'Ganaste el duelo', 'Ganaste "Duelo de la semana" contra carlos_pro. +30 XP.',
             tmp_ts(-2, 0));
     p_aviso(v_sofia, 'COMPETENCIA', 'Nueva invitación', 'laura_runner te invitó a "Reto del parque".', tmp_ts(-1, 9), 'N');
+    p_aviso(v_laura, 'COMPETENCIA', 'Nueva invitación', 'carlos_pro te invitó a "Torneo del Quindío".', tmp_ts(-1, 8), 'N');
+    p_aviso(v_sofia, 'COMPETENCIA', 'Nueva invitación', 'carlos_pro te invitó a "Torneo del Quindío".', tmp_ts(-1, 8), 'N');
     p_aviso(v_sofia, 'COMPETENCIA', 'Invitación rechazada', 'carlos_pro no aceptó "Primer duelo".', tmp_ts(-2, 13));
 
     COMMIT;
