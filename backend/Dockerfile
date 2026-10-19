@@ -14,4 +14,5 @@ COPY --from=compilacion /app/target/kinet-backend-*.jar kinet.jar
 EXPOSE 8080
 # Variables que se definen al desplegar: DB_URL, DB_USUARIO, DB_CONTRASENA, KINET_JWT_SECRET,
 # KINET_CORS_ORIGENES, KINET_FRONTEND_URL y, opcionalmente, MAIL_HOST, MAIL_USUARIO, MAIL_CONTRASENA.
-ENTRYPOINT ["java", "-jar", "kinet.jar"]
+# -Xmx512m deja RAM libre para Oracle en la misma instancia
+ENTRYPOINT ["java", "-Xmx512m", "-jar", "kinet.jar"]
