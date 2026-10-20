@@ -3,6 +3,7 @@ package co.edu.uniquindio.kinet;
 import co.edu.uniquindio.kinet.model.PerfilJugador;
 import co.edu.uniquindio.kinet.repositories.PlataformaDeporteRepository;
 import co.edu.uniquindio.kinet.services.EntrenamientoService;
+import co.edu.uniquindio.kinet.services.ReglasJuego;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +14,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Map;
 
@@ -325,6 +327,27 @@ class EntrenamientoIntegracionTest extends PruebaIntegracion {
 
         String otro = registrar("ana@kinet.com", "ana_gg");
         subirEvidencia(otro, id, PNG).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void laEvidenciaSeValidaPorSuContenidoYSuTamano() throws Exception {
+        String token = registrar("leo@kinet.com", "leo_run");
+        long id = respuesta(entrenar(token, "FUERZA", 30, "MEDIA", haceHoras(3), null)).at("/entrenamiento/id").asLong();
+
+        subirEvidencia(token, id, new byte[0])
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.respuesta").value("Adjunta una imagen."));
+        byte[] grande = Arrays.copyOf(PNG, ReglasJuego.TAMANO_MAXIMO_EVIDENCIA + 1);
+        subirEvidencia(token, id, grande)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.respuesta").value("La imagen no puede pesar más de 5 MB."));
+        assertThat(evidenciaRepository.findAll()).isEmpty();
+
+        // el archivo se llama captura.png, pero el tipo se decide por sus primeros bytes: es un JPEG
+        byte[] jpeg = HexFormat.of().parseHex("FFD8FFE000104A46494600010100000100010000FFD9");
+        subirEvidencia(token, id, jpeg)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.respuesta.tipoContenido").value("image/jpeg"));
     }
 
     @Test

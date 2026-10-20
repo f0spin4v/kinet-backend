@@ -138,10 +138,11 @@ public class EvaluacionService {
     @Transactional
     public PreguntaAdminDTO cambiarEstadoPregunta(Long idPregunta, boolean activa) {
         PreguntaEvaluacion pregunta = buscarPregunta(idPregunta);
-        pregunta.setActiva(activa);
-        if (!activa && preguntaRepository.countByActiva(true) <= 1) {
+        // se cuenta antes de cambiarla: si no, Hibernate guarda el cambio antes de la consulta y la deja fuera
+        if (!activa && Boolean.TRUE.equals(pregunta.getActiva()) &&preguntaRepository.countByActiva(true) <= 1) {
             throw new ReglaNegocioException("El cuestionario debe tener al menos una pregunta activa.");
         }
+        pregunta.setActiva(activa);
         return PreguntaAdminDTO.de(preguntaRepository.save(pregunta));
     }
 
