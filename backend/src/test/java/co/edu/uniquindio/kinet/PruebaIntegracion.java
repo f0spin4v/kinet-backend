@@ -67,7 +67,7 @@ public abstract class PruebaIntegracion {
     @Autowired protected CompetenciaRepository competenciaRepository;
 
     @BeforeEach
-    void limpiarDatos() {
+    protected void limpiarDatos() {
         reloj.liberar();
         notificacionRepository.deleteAll();
         movimientoRepository.deleteAll();

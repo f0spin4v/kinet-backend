@@ -1,0 +1,5 @@
+# Los scripts de Windows necesitan fin de línea CRLF; con LF cmd.exe los interpreta mal.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+# El Maven Wrapper para Linux/Mac necesita LF.
+mvnw text eol=lf
