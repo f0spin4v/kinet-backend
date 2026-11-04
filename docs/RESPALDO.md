@@ -76,7 +76,7 @@ Crear una instancia nueva con `DESPLIEGUE.md`, sección 3. Restaurar el respaldo
 1. Generar claves nuevas: `openssl rand -hex 32`.
 2. Cambiarlas en Oracle:
    ```bash
-   docker compose exec db sh -c 'sqlplus -s system/"$ORACLE_PASSWORD"@localhost/FREEPDB1' <<'SQL'
+   docker compose exec -T db sh -c 'sqlplus -s system/"$ORACLE_PASSWORD"@localhost/FREEPDB1' <<'SQL'
    ALTER USER kinet_app IDENTIFIED BY "<nueva>";
    ALTER USER kinet_admin IDENTIFIED BY "<nueva>";
    ALTER USER kinet_reader IDENTIFIED BY "<nueva>";
