@@ -28,6 +28,10 @@ class AdminCatalogoIntegracionTest extends PruebaIntegracion {
 
     @AfterEach
     void restaurarCatalogos() {
+        // primero las reglas de las actividades creadas en la prueba (la FK no deja borrar la actividad antes)
+        reglaRepository.findAll().stream()
+                .filter(r -> !ACTIVIDADES_BASE.contains(r.getTipoActividad().getNombre()))
+                .forEach(reglaRepository::delete);
         actividadRepository.findAll().stream()
                 .filter(a -> !ACTIVIDADES_BASE.contains(a.getNombre()))
                 .forEach(actividadRepository::delete);
