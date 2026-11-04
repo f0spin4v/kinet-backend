@@ -26,7 +26,9 @@
 --   9. Datos de prueba
 --   P. Permisos de los roles y sinónimos
 --
--- Usuarios de base de datos (las claves son de desarrollo: cámbialas fuera de tu máquina):
+-- Usuarios de base de datos. Las claves de este script son SOLO para la base local de desarrollo; en
+-- producción se cambian con db/migraciones/2026-11-04_auditoria.sql y viven únicamente en el .env del
+-- servidor (auditoría 03/11/2026, NC-05):
 --   KINET_OWNER   dueño de las tablas. Sin contraseña (NO AUTHENTICATION): nadie inicia sesión con él.
 --   KINET_APP     el backend. Lee y escribe datos, pero no crea ni borra tablas. MOVIMIENTO_XP e
 --                 HISTORIAL_RANGO son de solo inserción: el historial no se puede editar ni borrar.
@@ -46,9 +48,8 @@
 --   * MOVIMIENTO_XP: CHECK de coherencia entre el origen y su referencia.
 --   * Índices únicos parciales para las reglas "solo uno a la vez".
 --
--- Contraseñas de las cuentas de la aplicación (datos de prueba):
---   admin@kinet.com -> Admin2026
---   resto           -> Kinet2026
+-- Las cuentas de la sección 9 son datos de prueba para la base local. En producción la contraseña del
+-- administrador se cambió y no se publica.
 -- =====================================================================
 
 SET DEFINE OFF
@@ -871,6 +872,29 @@ CREATE INDEX ix_notificacion_estado ON NOTIFICACION (estado_envio);
 
 
 -- =====================================================================
+-- 7b. BITÁCORA DE ACCIONES ADMINISTRATIVAS (auditoría 03/11/2026, criterio 6.7.9)
+-- Quién cambió el estado o el rol de una cuenta, creó una cuenta o ajustó XP, cuándo, y el valor anterior y
+-- el nuevo. Solo inserción: KINET_APP no puede editarla ni borrarla. Sin FK a USUARIO a propósito: si una
+-- cuenta se borra, la bitácora debe conservarse.
+-- =====================================================================
+CREATE TABLE AUDITORIA_ADMIN (
+    id_auditoria        NUMBER(10) GENERATED ALWAYS AS IDENTITY,
+    id_actor            NUMBER(10) NOT NULL,
+    correo_actor        VARCHAR2(120) NOT NULL,
+    accion              VARCHAR2(20) NOT NULL,
+    id_usuario_afectado NUMBER(10),
+    correo_afectado     VARCHAR2(120),
+    valor_anterior      VARCHAR2(200),
+    valor_nuevo         VARCHAR2(200),
+    fecha_accion        TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+    CONSTRAINT pk_auditoria_admin PRIMARY KEY (id_auditoria),
+    CONSTRAINT ck_auditoria_accion CHECK (accion IN ('CAMBIO_ESTADO', 'CAMBIO_ROL', 'CREACION_CUENTA', 'AJUSTE_XP'))
+);
+CREATE INDEX ix_auditoria_fecha ON AUDITORIA_ADMIN (fecha_accion);
+CREATE INDEX ix_auditoria_afectado ON AUDITORIA_ADMIN (id_usuario_afectado);
+
+
+-- =====================================================================
 -- V. VISTAS PARA REPORTES
 -- =====================================================================
 
@@ -1665,7 +1689,7 @@ DROP FUNCTION tmp_temporada;
 BEGIN
     FOR t IN (SELECT table_name FROM dba_tables WHERE owner = 'KINET_OWNER') LOOP
         -- backend: datos sí, estructura no; el historial (libro de XP y cambios de rango) es de solo inserción
-        IF t.table_name IN ('MOVIMIENTO_XP', 'HISTORIAL_RANGO') THEN
+        IF t.table_name IN ('MOVIMIENTO_XP', 'HISTORIAL_RANGO', 'AUDITORIA_ADMIN') THEN
             EXECUTE IMMEDIATE 'GRANT SELECT, INSERT ON kinet_owner.' || t.table_name || ' TO rol_kinet_app';
         ELSE
             EXECUTE IMMEDIATE 'GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.' || t.table_name || ' TO rol_kinet_app';
@@ -1673,7 +1697,8 @@ BEGIN
         -- administrador funcional: todo sobre los datos
         EXECUTE IMMEDIATE 'GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.' || t.table_name || ' TO rol_kinet_admin';
         -- reportes: sin credenciales ni datos personales
-        IF t.table_name NOT IN ('USUARIO', 'PERFIL_JUGADOR', 'TOKEN_RECUPERACION', 'EVIDENCIA_ENTRENAMIENTO') THEN
+        IF t.table_name NOT IN ('USUARIO', 'PERFIL_JUGADOR', 'TOKEN_RECUPERACION', 'EVIDENCIA_ENTRENAMIENTO',
+                                'AUDITORIA_ADMIN') THEN
             EXECUTE IMMEDIATE 'GRANT SELECT ON kinet_owner.' || t.table_name || ' TO rol_kinet_reader';
         END IF;
     END LOOP;

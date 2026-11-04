@@ -37,6 +37,12 @@ public class UsuarioController {
         return ResponseEntity.ok(new ResponseDTO<>(false, usuarioService.editarPerfil(auth.getName(), dto)));
     }
 
+    @Operation(summary = "Aceptar la política de tratamiento de datos (cuentas creadas por el administrador)")
+    @PutMapping("/politica")
+    public ResponseEntity<ResponseDTO<UsuarioDTO>> aceptarPolitica(Authentication auth) {
+        return ResponseEntity.ok(new ResponseDTO<>(false, usuarioService.aceptarPolitica(auth.getName())));
+    }
+
     @Operation(summary = "Cambiar mi contraseña")
     @PutMapping("/contrasena")
     public ResponseEntity<ResponseDTO<MensajeDTO>> cambiarContrasena(Authentication auth,

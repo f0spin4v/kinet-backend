@@ -89,6 +89,12 @@ public class EntrenamientoController {
                 .body(new ResponseDTO<>(false, evidenciaService.subirEnlace(auth.getName(), id, dto.url())));
     }
 
+    @Operation(summary = "Datos de mi evidencia (imagen o enlace), sin la imagen; 404 si no tiene")
+    @GetMapping("/{id}/evidencia/datos")
+    public ResponseEntity<ResponseDTO<EvidenciaDTO>> datosEvidencia(Authentication auth, @PathVariable Long id) {
+        return ResponseEntity.ok(new ResponseDTO<>(false, evidenciaService.datosPropios(auth.getName(), id)));
+    }
+
     @Operation(summary = "Ver la imagen de mi evidencia (404 si la evidencia es un enlace)")
     @GetMapping("/{id}/evidencia")
     public ResponseEntity<byte[]> verEvidencia(Authentication auth, @PathVariable Long id) {

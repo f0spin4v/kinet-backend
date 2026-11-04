@@ -18,11 +18,22 @@ import java.util.Optional;
 @Component
 public class JwtUtils {
 
+    /** El secreto que traía el código antes de la auditoría: es público, así que nunca se acepta. */
+    private static final String SECRETO_PUBLICADO = "clave-solo-para-desarrollo-local-kinet-2026-cambiar";
+
     private final SecretKey clave;
     private final Duration expiracion;
 
-    public JwtUtils(@Value("${kinet.jwt.secret}") String secreto,
+    /**
+     * El secreto viene SIEMPRE de la variable KINET_JWT_SECRET (sin valor por defecto en el código). Si falta, es
+     * corto o es el secreto que se publicó, la API no arranca: así nunca se firma con una clave conocida.
+     */
+    public JwtUtils(@Value("${kinet.jwt.secret:}") String secreto,
                     @Value("${kinet.jwt.expiracion-minutos}") long minutos) {
+        if (secreto == null || secreto.isBlank() || secreto.length() < 32 || SECRETO_PUBLICADO.equals(secreto)) {
+            throw new IllegalStateException("Define la variable KINET_JWT_SECRET con un secreto propio de al menos "
+                    + "32 caracteres (por ejemplo: openssl rand -base64 48). La API no arranca sin ella.");
+        }
         this.clave = Keys.hmacShaKeyFor(secreto.getBytes(StandardCharsets.UTF_8));
         this.expiracion = Duration.ofMinutes(minutos);
     }

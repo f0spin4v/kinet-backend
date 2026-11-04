@@ -6,6 +6,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -57,7 +58,8 @@ class AdminCatalogoIntegracionTest extends PruebaIntegracion {
                 .andExpect(status().isCreated())
                 // el nombre se normaliza: mayúsculas y guion bajo
                 .andExpect(jsonPath("$.respuesta.nombre").value("NATACION_LIBRE"))
-                .andExpect(jsonPath("$.respuesta.estado").value("ACTIVA"))
+                // nace INACTIVA: sin reglas de puntuación el jugador no ganaría XP
+                .andExpect(jsonPath("$.respuesta.estado").value("INACTIVA"))
                 .andExpect(jsonPath("$.respuesta.reglasVigentes.length()").value(0)))
                 .at("/id").asLong();
 
@@ -85,11 +87,24 @@ class AdminCatalogoIntegracionTest extends PruebaIntegracion {
     }
 
     @Test
-    void unaActividadNuevaApareceEnElCatalogoDeLosJugadores() throws Exception {
+    void unaActividadSoloSeActivaConReglasYEntoncesApareceParaLosJugadores() throws Exception {
         String admin = cuentaConRol("admin@kinet.com", "admin_k", "ADMINISTRADOR");
         String jugador = registrar("leo@kinet.com", "leo_run");
 
-        post("/api/admin/actividades", Map.of("nombre", "Remo"), admin).andExpect(status().isCreated());
+        long id = respuesta(post("/api/admin/actividades", Map.of("nombre", "Remo"), admin)
+                .andExpect(status().isCreated())).at("/id").asLong();
+        get("/api/catalogos/actividades", jugador)
+                .andExpect(jsonPath("$.respuesta[?(@.nombre=='REMO')]").isEmpty());
+
+        // sin reglas no se puede activar (caso «Dyo» de la auditoría)
+        patch("/api/admin/actividades/" + id + "/estado", Map.of("estado", "ACTIVA"), admin)
+                .andExpect(status().isBadRequest());
+
+        post("/api/admin/reglas-puntuacion", Map.of("idTipoActividad", id, "intensidad", "MEDIA",
+                "xpPorMinuto", 2, "duracionMinimaMin", 15, "vigenteDesde", LocalDate.now().toString()), admin)
+                .andExpect(status().isCreated());
+        patch("/api/admin/actividades/" + id + "/estado", Map.of("estado", "ACTIVA"), admin)
+                .andExpect(status().isOk());
 
         get("/api/catalogos/actividades", jugador)
                 .andExpect(jsonPath("$.respuesta[?(@.nombre=='REMO')]").isNotEmpty());

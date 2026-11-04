@@ -1,6 +1,7 @@
 package co.edu.uniquindio.kinet.controllers;
 
 import co.edu.uniquindio.kinet.dto.usuario.CambiarRolDTO;
+import co.edu.uniquindio.kinet.dto.usuario.CrearCuentaDTO;
 import co.edu.uniquindio.kinet.dto.usuario.UsuarioDTO;
 import co.edu.uniquindio.kinet.services.UsuarioService;
 import co.edu.uniquindio.kinet.dto.MensajeDTO;
@@ -16,13 +17,20 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@Tag(name = "24. Admin: usuarios", description = "Roles de las cuentas")
+@Tag(name = "24. Admin: usuarios", description = "Creación de cuentas y roles")
 @RestController
 @RequestMapping("/api/admin/usuarios")
 @RequiredArgsConstructor
 public class AdminUsuarioController {
 
     private final UsuarioService usuarioService;
+
+    @Operation(summary = "Crear una cuenta con su rol (el titular acepta la política de datos en su primer ingreso)")
+    @PostMapping
+    public ResponseEntity<ResponseDTO<UsuarioDTO>> crear(Authentication auth, @Valid @RequestBody CrearCuentaDTO dto) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(new ResponseDTO<>(false, usuarioService.crearCuenta(auth.getName(), dto)));
+    }
 
     @Operation(summary = "Cambiar el rol de una cuenta")
     @PatchMapping("/{id}/rol")

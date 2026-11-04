@@ -32,9 +32,9 @@ El modelo v2 tiene **34 tablas**. Empezó con 31. Después vinieron tres cambios
    | Usuario | Inicia sesión | Permisos |
    |---|---|---|
    | `KINET_OWNER` | No (`NO AUTHENTICATION`) | Dueño de las tablas, vistas e índices |
-   | `KINET_APP` (`KinetApp2026`) | Sí: lo usa el backend | SELECT, INSERT, UPDATE y DELETE en todo, **salvo** MOVIMIENTO_XP e HISTORIAL_RANGO: ahí solo SELECT e INSERT |
-   | `KINET_ADMIN` (`KinetAdmin2026`) | Sí: personas del equipo | DML completo, sin DDL |
-   | `KINET_READER` (`KinetLectura2026`) | Sí: reportes | Solo SELECT, y sin USUARIO, PERFIL_JUGADOR, TOKEN_RECUPERACION ni EVIDENCIA_ENTRENAMIENTO (datos personales) |
+   | `KINET_APP` (clave de desarrollo en `kinet_bd.sql`) | Sí: lo usa el backend | SELECT, INSERT, UPDATE y DELETE en todo, **salvo** MOVIMIENTO_XP e HISTORIAL_RANGO: ahí solo SELECT e INSERT |
+   | `KINET_ADMIN` (clave de desarrollo en `kinet_bd.sql`) | Sí: personas del equipo | DML completo, sin DDL |
+   | `KINET_READER` (clave de desarrollo en `kinet_bd.sql`) | Sí: reportes | Solo SELECT, y sin USUARIO, PERFIL_JUGADOR, TOKEN_RECUPERACION ni EVIDENCIA_ENTRENAMIENTO (datos personales) |
 
    - Los permisos van por roles: `ROL_KINET_APP`, `ROL_KINET_ADMIN` y `ROL_KINET_READER`.
    - Perfil `KINET_PERFIL_PERSONAS` (admin y lector): 5 intentos fallidos bloquean la cuenta 1 hora, la contraseña vence a los 180 días y no se pueden repetir las 5 últimas.
@@ -116,7 +116,7 @@ El modelo v2 tiene **34 tablas**. Empezó con 31. Después vinieron tres cambios
 ### Cambios en el backend
 | Antes | Ahora |
 |---|---|
-| Conexión como `kinet`/`kinet123` | `kinet_app`/`KinetApp2026` con `hibernate.default_schema=KINET_OWNER` (variables `DB_USUARIO`, `DB_CONTRASENA`, `DB_ESQUEMA`) |
+| Conexión como `kinet`/`kinet123` | `kinet_app` (clave en `DB_CONTRASENA`) con `hibernate.default_schema=KINET_OWNER` (variables `DB_USUARIO`, `DB_CONTRASENA`, `DB_ESQUEMA`) |
 | `Notificacion.leida` | `fechaLectura`. El conteo de no leídas usa `fechaLectura IS NULL`. |
 | `TemporadaService` sin estados | Estado de la participación, historial de rango, `abandonar`, `descalificar`, `exigirActiva`. El ranking y la posición solo cuentan ACTIVA y FINALIZADA. |
 | `CierreTemporadaService` solo cerraba | También `abandonar` y `descalificar`, porque las dos tocan la cola de matchmaking. |
@@ -260,29 +260,29 @@ Datos de prueba que cambiaron:
 ```bash
 # 1. Base de datos (Oracle Free en Docker, con volumen para no perder datos)
 docker run -d --name kinet-db -p 1522:1521 \
-  -e ORACLE_PASSWORD=admin123 \
+  -e ORACLE_PASSWORD=<clave-system-local> \
   -v kinet-db-data:/opt/oracle/oradata gvenzl/oracle-free:23-slim
 
 # 2. Usuarios, esquema y datos. Corre como SYSTEM: borra y recrea KINET_OWNER, KINET_APP,
 #    KINET_ADMIN y KINET_READER con todas sus tablas.
 docker cp kinet_bd.sql kinet-db:/tmp/
 docker exec -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 kinet-db \
-  sqlplus system/admin123@localhost/FREEPDB1 @/tmp/kinet_bd.sql
+  sqlplus system/<clave-system-local>@localhost/FREEPDB1 @/tmp/kinet_bd.sql
 
 # 3. Backend (desde backend/): ejecutar KinetApplication en IntelliJ, o
 mvn spring-boot:run
 ```
 
-El backend entra como `kinet_app` (`KinetApp2026`) y usa el esquema `KINET_OWNER`. Un contenedor creado antes con `APP_USER=kinet` conserva el usuario `KINET` con las tablas viejas: ya no se usa.
+El backend entra como `kinet_app` (clave de desarrollo en `kinet_bd.sql`) y usa el esquema `KINET_OWNER`. Un contenedor creado antes con `APP_USER=kinet` conserva el usuario `KINET` con las tablas viejas: ya no se usa.
 
 - **API:** `http://localhost:8080`.
 - **Documentación interactiva:** `http://localhost:8080/swagger-ui.html`.
 
-**Cuentas de prueba** (contraseña `Kinet2026`, salvo el administrador):
+**Cuentas de prueba de la base local** (contraseñas en la sección 9 de `kinet_bd.sql`; en producción el administrador tiene otra clave):
 
 | Correo | Rol | Situación |
 |---|---|---|
-| admin@kinet.com (`Admin2026`) | ADMINISTRADOR | Todo lo del equipo: catálogos, retos, temporadas, roles, soporte de cuentas, analítica y moderación |
+| admin@kinet.com | ADMINISTRADOR | Todo lo del equipo: catálogos, retos, temporadas, roles, soporte de cuentas, analítica y moderación |
 | entrenador@kinet.com | ENTRENADOR | Revisa el entrenamiento PENDIENTE de Carlos y las evidencias |
 | laura@kinet.com | JUGADOR | INTERMEDIO, 1000 XP (nivel 6), racha 3, en el clan, en cola de matchmaking, una evidencia, ganó "Duelo de la semana", creó "Reto del parque" |
 | carlos@kinet.com | JUGADOR | AVANZADO, 1284 XP (nivel 6), líder del clan, sesión PENDIENTE con evidencia, historial de rango |

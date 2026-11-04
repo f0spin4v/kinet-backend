@@ -144,6 +144,20 @@ public class EvidenciaService {
                 .orElseThrow(() -> new NoEncontradoException("Este entrenamiento no tiene evidencia.")));
     }
 
+    /**
+     * Datos de la evidencia de un entrenamiento propio (sin la imagen), sea imagen o enlace. 404 si no tiene.
+     * El detalle del entrenamiento usa esto; la imagen se pide aparte (auditoría 03/11/2026, NC-03).
+     */
+    @Transactional(readOnly = true)
+    public EvidenciaDTO datosPropios(String correo, Long idEntrenamiento) {
+        Usuario usuario = usuarioService.obtenerEntidad(correo);
+        entrenamientoRepository.findByIdAndUsuarioId(idEntrenamiento, usuario.getId())
+                .orElseThrow(() -> new NoEncontradoException("El entrenamiento no existe."));
+        return evidenciaRepository.findByEntrenamientoId(idEntrenamiento)
+                .map(e -> datos(e.getId()))
+                .orElseThrow(() -> new NoEncontradoException("Este entrenamiento no tiene evidencia."));
+    }
+
     /** Estado de la evidencia de cada entrenamiento (sin cargar las imágenes). */
     @Transactional(readOnly = true)
     public Map<Long, String> estados(Collection<Long> idsEntrenamiento) {

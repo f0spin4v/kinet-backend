@@ -42,6 +42,11 @@ public class RestExceptionHandler {
         return respuesta(HttpStatus.UNAUTHORIZED, ex.getMessage());
     }
 
+    @ExceptionHandler(DemasiadosIntentosException.class)
+    public ResponseEntity<ResponseDTO<String>> demasiadosIntentos(DemasiadosIntentosException ex) {
+        return respuesta(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+    }
+
     @ExceptionHandler(AccesoDenegadoException.class)
     public ResponseEntity<ResponseDTO<String>> accesoDenegado(AccesoDenegadoException ex) {
         return respuesta(HttpStatus.FORBIDDEN, ex.getMessage());

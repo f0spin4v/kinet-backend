@@ -7,6 +7,8 @@ import co.edu.uniquindio.kinet.dto.usuario.UsuarioDTO;
 import co.edu.uniquindio.kinet.exceptions.ConflictoException;
 import co.edu.uniquindio.kinet.exceptions.NoEncontradoException;
 import co.edu.uniquindio.kinet.exceptions.ReglaNegocioException;
+import co.edu.uniquindio.kinet.dto.usuario.CrearCuentaDTO;
+import co.edu.uniquindio.kinet.model.AuditoriaAdmin;
 import co.edu.uniquindio.kinet.model.PerfilJugador;
 import co.edu.uniquindio.kinet.model.Rol;
 import co.edu.uniquindio.kinet.model.Usuario;
@@ -25,6 +27,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.Period;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -43,6 +47,17 @@ public class UsuarioService {
     private final EvaluacionUsuarioRepository evaluacionRepository;
     private final PasswordEncoder passwordEncoder;
     private final NotificacionService notificacionService;
+    private final BitacoraService bitacoraService;
+
+    /** Ley 1581 de 2012: Kinet solo admite titulares mayores de edad (no trata datos de menores). */
+    public static final int EDAD_MINIMA = 18;
+
+    /** Rechaza fechas de nacimiento de menores de edad. null pasa: el DTO decide si es obligatoria. */
+    public static void validarEdad(LocalDate fechaNacimiento) {
+        if (fechaNacimiento != null && Period.between(fechaNacimiento, LocalDate.now()).getYears() < EDAD_MINIMA) {
+            throw new ReglaNegocioException("Kinet es solo para mayores de " + EDAD_MINIMA + " años.");
+        }
+    }
 
     @Transactional(readOnly = true)
     public Usuario obtenerEntidad(String correo) {
@@ -114,6 +129,7 @@ public class UsuarioService {
         if (perfilRepository.existsByGamertagAndIdNot(editarDTO.gamertag(), usuario.getId())) {
             throw new ConflictoException("Ese gamertag ya está en uso. Elige otro.");
         }
+        validarEdad(editarDTO.fechaNacimiento());
         PerfilJugador perfil = perfilDe(usuario);
         usuario.setNombres(editarDTO.nombres().trim());
         usuario.setApellidos(editarDTO.apellidos().trim());
@@ -166,8 +182,10 @@ public class UsuarioService {
         if (actor.getId().equals(usuario.getId())) {
             throw new ReglaNegocioException("No puedes cambiar el estado de tu propia cuenta.");
         }
+        EstadoUsuario anterior = usuario.getEstado();
         usuario.setEstado(estado);
         usuarioRepository.save(usuario);
+        bitacoraService.registrar(actor, AuditoriaAdmin.CAMBIO_ESTADO, usuario, anterior.name(), estado.name());
         notificacionService.notificar(usuario, TipoNotificacion.SEGURIDAD, CanalNotificacion.EMAIL,
                 "Estado de tu cuenta", "Tu cuenta de Kinet ahora está " + estado.name() + ".");
         return toDTO(usuario);
@@ -182,8 +200,60 @@ public class UsuarioService {
         }
         Rol rol = rolRepository.findByNombre(nombreRol)
                 .orElseThrow(() -> new NoEncontradoException("El rol no existe."));
+        String anterior = usuario.getRol().getNombre();
         usuario.setRol(rol);
-        return toDTO(usuarioRepository.save(usuario));
+        Usuario guardado = usuarioRepository.save(usuario);
+        bitacoraService.registrar(actor, AuditoriaAdmin.CAMBIO_ROL, usuario, anterior, rol.getNombre());
+        return toDTO(guardado);
+    }
+
+    /**
+     * El administrador crea una cuenta con su rol. La política de datos NO se acepta por el titular: queda
+     * pendiente y la acepta él mismo en su primer ingreso (Ley 1581 de 2012, consentimiento del titular).
+     */
+    @Transactional
+    public UsuarioDTO crearCuenta(String correoActor, CrearCuentaDTO dto) {
+        Usuario actor = obtenerEntidad(correoActor);
+        String correo = normalizar(dto.correo());
+        if (usuarioRepository.existsByCorreo(correo)) {
+            throw new ConflictoException("Ya existe una cuenta con ese correo.");
+        }
+        if (perfilRepository.existsByGamertag(dto.gamertag())) {
+            throw new ConflictoException("Ese gamertag ya está en uso. Elige otro.");
+        }
+        Rol rol = rolRepository.findByNombre(dto.rol())
+                .orElseThrow(() -> new NoEncontradoException("El rol no existe."));
+        Usuario usuario = Usuario.builder()
+                .rol(rol)
+                .nombres(dto.nombres().trim())
+                .apellidos(dto.apellidos().trim())
+                .correo(correo)
+                .passwordHash(passwordEncoder.encode(dto.contrasena()))
+                .aceptaPoliticaDatos(false)
+                .build();
+        usuario.setPerfil(PerfilJugador.builder().usuario(usuario).gamertag(dto.gamertag()).build());
+        usuarioRepository.save(usuario);
+        bitacoraService.registrar(actor, AuditoriaAdmin.CREACION_CUENTA, usuario, null, rol.getNombre());
+        return toDTO(usuario);
+    }
+
+    /** El titular acepta la política de tratamiento de datos (si su cuenta la creó el administrador). */
+    @Transactional
+    public UsuarioDTO aceptarPolitica(String correo) {
+        Usuario usuario = obtenerEntidad(correo);
+        if (!Boolean.TRUE.equals(usuario.getAceptaPoliticaDatos())) {
+            usuario.setAceptaPoliticaDatos(true);
+            usuario.setFechaAceptaPolitica(LocalDate.now());
+            usuarioRepository.save(usuario);
+        }
+        return toDTO(usuario);
+    }
+
+    /** Deja en la bitácora un ajuste manual de XP hecho por el administrador. */
+    @Transactional
+    public void auditarAjusteXp(String correoActor, Long idUsuario, int cantidad, String motivo) {
+        bitacoraService.registrar(obtenerEntidad(correoActor), AuditoriaAdmin.AJUSTE_XP, obtenerPorId(idUsuario),
+                null, (cantidad > 0 ? "+" : "") + cantidad + " XP: " + motivo);
     }
 
     static String normalizar(String correo) {

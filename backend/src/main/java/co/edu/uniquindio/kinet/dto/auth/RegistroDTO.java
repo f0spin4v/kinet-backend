@@ -22,6 +22,8 @@ public record RegistroDTO(
         @Size(min = 3, max = 30, message = "El gamertag debe tener entre 3 y 30 caracteres.")
         @Pattern(regexp = "^[A-Za-z0-9_]+$", message = "El gamertag solo puede tener letras, números y guion bajo.")
         String gamertag,
+        // Ley 1581 de 2012: se pide para verificar que el titular sea mayor de edad (ver UsuarioService.EDAD_MINIMA)
+        @NotNull(message = "Escribe tu fecha de nacimiento.")
         @Past(message = "La fecha de nacimiento debe estar en el pasado.")
         LocalDate fechaNacimiento,
         @AssertTrue(message = "Debes aceptar la política de tratamiento de datos.")

@@ -17,6 +17,7 @@ import co.edu.uniquindio.kinet.repositories.RolRepository;
 import co.edu.uniquindio.kinet.repositories.TokenRecuperacionRepository;
 import co.edu.uniquindio.kinet.repositories.UsuarioRepository;
 import co.edu.uniquindio.kinet.security.JwtUtils;
+import co.edu.uniquindio.kinet.security.LimiteIntentosLogin;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -49,6 +50,7 @@ public class AuthService {
     private final UsuarioService usuarioService;
     private final NotificacionService notificacionService;
     private final EmailService emailService;
+    private final LimiteIntentosLogin limiteIntentos;
 
     @Value("${kinet.recuperacion.expiracion-minutos}")
     private long minutosRecuperacion;
@@ -63,6 +65,7 @@ public class AuthService {
         if (perfilRepository.existsByGamertag(registroDTO.gamertag())) {
             throw new ConflictoException("Ese gamertag ya está en uso. Elige otro.");
         }
+        UsuarioService.validarEdad(registroDTO.fechaNacimiento());
         Rol jugador = rolRepository.findByNombre(Rol.JUGADOR)
                 .orElseThrow(() -> new IllegalStateException("Falta el rol JUGADOR en la base de datos."));
 
@@ -86,10 +89,18 @@ public class AuthService {
 
     @Transactional(readOnly = true)
     public SesionDTO iniciarSesion(LoginDTO loginDTO) {
+        String correo = UsuarioService.normalizar(loginDTO.correo());
+        // 5 intentos fallidos con el mismo correo bloquean ese correo 15 minutos (429)
+        limiteIntentos.verificar(correo);
         // mismo mensaje si falla el correo o la contraseña, para no revelar qué cuentas existen
-        Usuario usuario = usuarioRepository.findByCorreo(UsuarioService.normalizar(loginDTO.correo()))
+        Usuario usuario = usuarioRepository.findByCorreo(correo)
                 .filter(u -> passwordEncoder.matches(loginDTO.contrasena(), u.getPasswordHash()))
-                .orElseThrow(() -> new CredencialesInvalidasException(CREDENCIALES_INVALIDAS));
+                .orElse(null);
+        if (usuario == null) {
+            limiteIntentos.registrarFallo(correo);
+            throw new CredencialesInvalidasException(CREDENCIALES_INVALIDAS);
+        }
+        limiteIntentos.limpiar(correo);
         if (usuario.getEstado() == EstadoUsuario.BLOQUEADO) {
             throw new AccesoDenegadoException("Tu cuenta está bloqueada. Contacta a soporte.");
         }

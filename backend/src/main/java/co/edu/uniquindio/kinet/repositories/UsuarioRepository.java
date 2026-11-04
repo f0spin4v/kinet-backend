@@ -34,6 +34,15 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
 
     boolean existsByCorreo(String correo);
 
+    /** Estado y rol actuales de una cuenta: el filtro JWT los revisa en cada petición. */
+    interface EstadoYRol {
+        EstadoUsuario getEstado();
+        String getRol();
+    }
+
+    @Query("SELECT u.estado AS estado, u.rol.nombre AS rol FROM Usuario u WHERE u.correo = :correo")
+    Optional<EstadoYRol> estadoYRol(@Param("correo") String correo);
+
     /** Búsqueda para el administrador por parte del correo, con rol y perfil. */
     @Query(value = """
             SELECT u FROM Usuario u JOIN FETCH u.rol LEFT JOIN FETCH u.perfil
