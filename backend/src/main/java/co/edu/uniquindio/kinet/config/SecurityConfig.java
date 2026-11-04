@@ -37,6 +37,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/error").permitAll()
+                        // monitoreo: solo el estado de salud es público (sin detalles)
+                        .requestMatchers(HttpMethod.GET, "/api/sistema/health").permitAll()
                         // staff
                         .requestMatchers("/api/admin/**").hasRole("ADMINISTRADOR")
                         .requestMatchers("/api/moderacion/**").hasAnyRole("ENTRENADOR", "ADMINISTRADOR")

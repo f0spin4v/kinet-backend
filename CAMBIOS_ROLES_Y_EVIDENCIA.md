@@ -47,7 +47,7 @@ El script borra y recrea todo (se pierden los datos actuales del contenedor):
 
 ```bash
 docker cp kinet_bd.sql kinet-db:/tmp/
-docker exec -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 kinet-db sqlplus system/admin123@localhost/FREEPDB1 "@/tmp/kinet_bd.sql"
+docker exec -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 kinet-db sqlplus system/<clave-system-local>@localhost/FREEPDB1 "@/tmp/kinet_bd.sql"
 ```
 
 Ya se recargó: 3 roles, 5 apps en `PLATAFORMA_DEPORTE`, 34 tablas y sin errores.

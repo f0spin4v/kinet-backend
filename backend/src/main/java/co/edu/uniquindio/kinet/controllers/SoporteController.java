@@ -49,7 +49,9 @@ public class SoporteController {
 
     @Operation(summary = "Ajuste manual de XP (con motivo)")
     @PostMapping("/ajustes-xp")
-    public ResponseEntity<ResponseDTO<MovimientoXpDTO>> ajustar(@Valid @RequestBody AjusteXpDTO dto) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(new ResponseDTO<>(false, progresoService.ajustar(dto)));
+    public ResponseEntity<ResponseDTO<MovimientoXpDTO>> ajustar(Authentication auth, @Valid @RequestBody AjusteXpDTO dto) {
+        MovimientoXpDTO movimiento = progresoService.ajustar(dto);
+        usuarioService.auditarAjusteXp(auth.getName(), dto.idUsuario(), dto.cantidad(), dto.motivo());
+        return ResponseEntity.status(HttpStatus.CREATED).body(new ResponseDTO<>(false, movimiento));
     }
 }

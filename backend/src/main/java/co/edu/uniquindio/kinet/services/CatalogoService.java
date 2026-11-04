@@ -73,10 +73,18 @@ public class CatalogoService {
         return actividad;
     }
 
-    /** INACTIVA: deja de aparecer para el jugador y no se puede usar; su historial se conserva. */
+    /**
+     * INACTIVA: deja de aparecer para el jugador y no se puede usar; su historial se conserva.
+     * ACTIVA: solo si tiene al menos una regla de puntuación vigente; si no, el jugador entrenaría sin ganar XP
+     * (caso «Dyo», auditoría 03/11/2026).
+     */
     @Transactional
     public ActividadDTO cambiarEstadoActividad(Long idActividad, EstadoActividad estado) {
         TipoActividad actividad = actividad(idActividad);
+        if (estado == EstadoActividad.ACTIVA && !tieneReglaVigente(idActividad)) {
+            throw new ReglaNegocioException("Antes de activar " + actividad.getNombre()
+                    + " crea al menos una regla de puntuación vigente.");
+        }
         actividad.setEstado(estado);
         actividadRepository.save(actividad);
         return actividades(true).stream().filter(a -> a.id().equals(idActividad)).findFirst().orElseThrow();
@@ -88,8 +96,15 @@ public class CatalogoService {
         if (actividadRepository.existsByNombre(nombre)) {
             throw new ConflictoException("Ya existe una actividad con ese nombre.");
         }
-        TipoActividad actividad = actividadRepository.save(TipoActividad.builder().nombre(nombre).build());
+        // nace INACTIVA: se activa cuando ya tiene sus reglas de puntuación
+        TipoActividad actividad = actividadRepository.save(TipoActividad.builder()
+                .nombre(nombre).estado(EstadoActividad.INACTIVA).build());
         return ActividadDTO.de(actividad, List.of());
+    }
+
+    private boolean tieneReglaVigente(Long idActividad) {
+        return reglaRepository.vigentesEn(LocalDate.now()).stream()
+                .anyMatch(r -> r.getTipoActividad().getId().equals(idActividad));
     }
 
     @Transactional

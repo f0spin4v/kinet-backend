@@ -102,24 +102,26 @@ class ConsultasPorPeticionTest extends PruebaIntegracion {
         // Las listas paginadas suman un COUNT cuando la página viene llena; aquí no, porque son pocas filas.
         // Topes medidos tras pasar los N+1 a consultas. No dependen de cuántos jugadores, miembros o
         // participantes haya: si alguno sube, se volvió a consultar fila por fila.
+        // Cada tope incluye 1 consulta del filtro JWT, que revisa en la base que la cuenta siga activa y su rol
+        // actual (auditoría 03/11/2026, criterio 6.7.2). Es fija por petición: no crece con los datos.
         Map<String, Integer> topes = new LinkedHashMap<>();
-        topes.put("GET /api/clanes", 1);
-        topes.put("GET /api/clanes/{id}", 3);
-        topes.put("GET /api/temporadas/activa/ranking", 2);
-        topes.put("GET /api/temporadas/activa/mia", 4);
-        topes.put("GET /api/logros", 2);
-        topes.put("GET /api/retos", 7);
-        topes.put("GET /api/retos/mios", 4);
-        topes.put("GET /api/progreso/movimientos", 2);
-        topes.put("GET /api/catalogos/actividades", 2);
-        topes.put("GET /api/matchmaking/enfrentamientos", 5);
-        topes.put("GET /api/competencias", 7);
-        topes.put("GET /api/competencias/invitaciones", 7);
-        topes.put("GET /api/competencias/{id}", 6);
-        topes.put("GET /api/soporte/usuarios", 2);
-        topes.put("POST /api/matchmaking/solicitudes", 9);
-        topes.put("POST /api/entrenamientos/en-curso/fin", 34);
-        topes.put("POST /api/clanes/mio/salida", 5);
+        topes.put("GET /api/clanes", 2);
+        topes.put("GET /api/clanes/{id}", 4);
+        topes.put("GET /api/temporadas/activa/ranking", 3);
+        topes.put("GET /api/temporadas/activa/mia", 5);
+        topes.put("GET /api/logros", 3);
+        topes.put("GET /api/retos", 8);
+        topes.put("GET /api/retos/mios", 5);
+        topes.put("GET /api/progreso/movimientos", 3);
+        topes.put("GET /api/catalogos/actividades", 3);
+        topes.put("GET /api/matchmaking/enfrentamientos", 6);
+        topes.put("GET /api/competencias", 8);
+        topes.put("GET /api/competencias/invitaciones", 8);
+        topes.put("GET /api/competencias/{id}", 7);
+        topes.put("GET /api/soporte/usuarios", 3);
+        topes.put("POST /api/matchmaking/solicitudes", 10);
+        topes.put("POST /api/entrenamientos/en-curso/fin", 35);
+        topes.put("POST /api/clanes/mio/salida", 6);
         topes.forEach((endpoint, tope) -> assertThat(consultas.get(endpoint)).as(endpoint).isLessThanOrEqualTo(tope));
     }
 

@@ -65,10 +65,14 @@ public abstract class PruebaIntegracion {
     @Autowired protected TipoActividadRepository actividadRepository;
     @Autowired protected HistorialRangoRepository historialRangoRepository;
     @Autowired protected CompetenciaRepository competenciaRepository;
+    @Autowired protected AuditoriaAdminRepository auditoriaRepository;
+    @Autowired protected co.edu.uniquindio.kinet.security.LimiteIntentosLogin limiteIntentos;
 
     @BeforeEach
     protected void limpiarDatos() {
         reloj.liberar();
+        limiteIntentos.limpiarTodo();
+        auditoriaRepository.deleteAll();
         notificacionRepository.deleteAll();
         movimientoRepository.deleteAll();
         competenciaRepository.deleteAll();
@@ -119,6 +123,7 @@ public abstract class PruebaIntegracion {
         datos.put("correo", correo);
         datos.put("contrasena", "Segura123");
         datos.put("gamertag", gamertag);
+        datos.put("fechaNacimiento", "2000-01-01");
         datos.put("aceptaPolitica", true);
         return datos;
     }

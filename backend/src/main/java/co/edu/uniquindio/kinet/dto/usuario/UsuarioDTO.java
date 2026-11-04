@@ -17,7 +17,9 @@ public record UsuarioDTO(
         String avatarUrl,
         LocalDate fechaNacimiento,
         String nivelHabilidad,
-        LocalDateTime fechaRegistro
+        LocalDateTime fechaRegistro,
+        /** false si la cuenta la creó el administrador y el titular aún no acepta la política (Ley 1581). */
+        boolean aceptaPolitica
 ) {
     public static UsuarioDTO de(Usuario usuario, String nivelHabilidad) {
         PerfilJugador perfil = usuario.getPerfil();
@@ -26,6 +28,6 @@ public record UsuarioDTO(
                 perfil == null ? null : perfil.getGamertag(),
                 perfil == null ? null : perfil.getAvatarUrl(),
                 perfil == null ? null : perfil.getFechaNacimiento(),
-                nivelHabilidad, usuario.getFechaRegistro());
+                nivelHabilidad, usuario.getFechaRegistro(), Boolean.TRUE.equals(usuario.getAceptaPoliticaDatos()));
     }
 }

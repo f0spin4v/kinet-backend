@@ -19,39 +19,40 @@ Proyecto de Ingeniería de Software III, Universidad del Quindío.
 
 **Requisitos:** JDK 17 o superior, Docker Desktop e IntelliJ IDEA.
 
-1. **Levantar Oracle** con un volumen para no perder los datos (solo la primera vez):
+1. **Levantar Oracle** con un volumen para no perder los datos (solo la primera vez). Elige tú la clave de SYSTEM:
    ```bash
-   docker run -d --name kinet-db -p 1522:1521 -e ORACLE_PASSWORD=admin123 -v kinet-db-data:/opt/oracle/oradata gvenzl/oracle-free:23-slim
+   docker run -d --name kinet-db -p 1522:1521 -e ORACLE_PASSWORD=<clave-system-local> -v kinet-db-data:/opt/oracle/oradata gvenzl/oracle-free:23-slim
    ```
    Las veces siguientes basta con `docker start kinet-db`.
 
-2. **Crear los usuarios, las tablas y los datos** con el script de la raíz del repositorio. Corre como SYSTEM y borra y recrea todo lo de Kinet:
+2. **Crear los usuarios, las tablas y los datos** con el script de la raíz del repositorio. Corre como SYSTEM y borra y recrea todo lo de Kinet (**solo para tu base local**: en producción se usan las migraciones de `db/migraciones`):
    ```bash
    docker cp kinet_bd.sql kinet-db:/tmp/
-   docker exec -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 kinet-db sqlplus system/admin123@localhost/FREEPDB1 "@/tmp/kinet_bd.sql"
+   docker exec -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 kinet-db sqlplus system/<clave-system-local>@localhost/FREEPDB1 "@/tmp/kinet_bd.sql"
    ```
-   Usuarios de base de datos que crea:
+   Crea los usuarios `KINET_OWNER` (dueño de las tablas, no inicia sesión), `KINET_APP` (el backend: datos sí, estructura no; el libro de XP, el historial de rango y la bitácora son de solo inserción), `KINET_ADMIN` (equipo) y `KINET_READER` (reportes sin datos personales). Sus claves de desarrollo están en el propio script y **no se usan fuera de tu máquina**.
 
-   | Usuario | Contraseña | Uso |
-   |---|---|---|
-   | `KINET_OWNER` | (no inicia sesión) | Dueño de las tablas |
-   | `kinet_app` | `KinetApp2026` | El backend. Puede leer y escribir, pero en el libro de XP y el historial de rango solo puede insertar. |
-   | `kinet_admin` | `KinetAdmin2026` | Personas del equipo: DML completo, sin DDL |
-   | `kinet_reader` | `KinetLectura2026` | Reportes: solo lectura, sin datos personales |
+3. **Variables de entorno.** El backend no trae contraseñas ni secretos por defecto: sin ellas no arranca. Copia `.env.example` a `.env` (no se sube al repositorio) y llénalo, o defínelas en la configuración de ejecución de IntelliJ:
 
-3. **Arrancar el backend:** abrir la carpeta `backend` en IntelliJ y ejecutar `KinetApplication`. Queda en `http://localhost:8080`.
+   | Variable | Para qué |
+   |---|---|
+   | `DB_CONTRASENA` | Clave de `KINET_APP` |
+   | `KINET_JWT_SECRET` | Secreto para firmar las sesiones, mínimo 32 caracteres (`openssl rand -base64 48`) |
+   | `DB_URL`, `DB_USUARIO`, `KINET_CORS_ORIGENES`, `KINET_FRONTEND_URL`, `MAIL_*` | Opcionales: tienen valor local por defecto |
 
-4. **Explorar la API:** `http://localhost:8080/swagger-ui.html`. Para las rutas protegidas, iniciar sesión, copiar el token y pegarlo en el botón **Authorize**.
+4. **Arrancar el backend:** abrir la carpeta `backend` en IntelliJ y ejecutar `KinetApplication`. Queda en `http://localhost:8080`.
 
-5. **Pruebas funcionales:** abrir `kinet.http` en IntelliJ y ejecutar las peticiones en orden.
+5. **Explorar la API:** `http://localhost:8080/swagger-ui.html`. Para las rutas protegidas, iniciar sesión, copiar el token y pegarlo en el botón **Authorize**.
 
-6. **Pruebas automáticas:** clic derecho sobre `src/test/java` → **Run 'All Tests'**, o `mvn test`. Usan H2 en modo Oracle: no necesitan Docker.
+6. **Estado de salud:** `http://localhost:8080/api/sistema/health` responde `{"status":"UP"}`. Es lo que vigila el monitor de disponibilidad en producción.
 
-**Cuentas de prueba:**
-- `admin@kinet.com` / `Admin2026`.
-- Con la contraseña `Kinet2026`:
-  - equipo: `entrenador@kinet.com`;
-  - jugadores: `laura@kinet.com`, `carlos@kinet.com`, `sofia@kinet.com`, `andres@kinet.com`, `pedro@kinet.com` (este último, bloqueado).
+7. **Pruebas funcionales:** `.\pruebas-funcionales.cmd` desde la raíz (Cucumber) o `kinet.http` en IntelliJ.
+
+8. **Pruebas automáticas:** `.\todas-las-pruebas.cmd`, `mvn test` o clic derecho sobre `src/test/java` → **Run 'All Tests'**. Usan H2 en modo Oracle: no necesitan Docker.
+
+**Cuentas de prueba (solo base local):** las crea la sección 9 de `kinet_bd.sql`, donde está su contraseña. En producción la cuenta del administrador tiene otra contraseña, que no se publica.
+
+**Producción:** despliegue en [`docs/DESPLIEGUE.md`](../docs/DESPLIEGUE.md); respaldo y restauración en [`docs/RESPALDO.md`](../docs/RESPALDO.md).
 
 ## Arquitectura
 
