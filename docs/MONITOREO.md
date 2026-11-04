@@ -15,7 +15,15 @@ Responde a la auditoría del 03/11/2026: criterios 6.10.6 y 6.10.7, riesgo 7.
 
 `/api/sistema/health` es Spring Boot Actuator. Responde `{"status":"UP"}` si la API funciona **y** llega a Oracle; si la base de datos cae, responde 503 `{"status":"DOWN"}`. No muestra detalles internos y el resto de Actuator no está expuesto.
 
-## 2. Configurar UptimeRobot (gratis)
+## 2. Configuración actual
+
+Activo desde el 04/11/2026 (KAN-75):
+
+- Monitor HTTP `kinetapp.duckdns.org` y monitor de palabra clave `Kinet API + base de datos` (`/api/sistema/health`, incidente si falta `UP`), cada 5 minutos.
+- Alertas por correo al responsable.
+- **Página de estado pública:** https://stats.uptimerobot.com/5Xmbd8ZXHq
+
+## 3. Configurar UptimeRobot desde cero (gratis)
 
 1. Crear la cuenta en uptimerobot.com con el correo del equipo.
 2. **Add New Monitor → HTTP(s)** → `https://kinetapp.duckdns.org` → intervalo 5 minutos.
@@ -23,7 +31,7 @@ Responde a la auditoría del 03/11/2026: criterios 6.10.6 y 6.10.7, riesgo 7.
 4. En *Alert Contacts*, agregar los correos de los tres integrantes.
 5. Crear una *Status Page* pública con los dos monitores. Su enlace es la evidencia del monitoreo.
 
-## 3. Registro de incidentes
+## 4. Registro de incidentes
 
 Todo incidente (caída, error en producción, dato perdido, fallo del respaldo o problema de seguridad) se registra en Jira, en el proyecto KAN:
 
