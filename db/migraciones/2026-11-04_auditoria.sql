@@ -1,16 +1,17 @@
 -- =====================================================================
 -- Kinet · Migración de producción del 04/11/2026 (respuesta a la auditoría del 03/11/2026)
 --
--- NO borra datos. Se ejecuta UNA vez sobre la base que ya está en producción, como SYSTEM en el PDB:
---   docker exec -i kinet-db sqlplus -s system/"$ORACLE_PASSWORD"@localhost/FREEPDB1 @/tmp/2026-11-04_auditoria.sql
---
--- Antes de correrlo, reemplaza los tres valores <...> por contraseñas nuevas (no las publiques en el repo)
--- y pon la de KINET_APP también en DB_CONTRASENA del .env del servidor.
+-- NO borra datos. Se ejecuta UNA vez sobre la base que ya está en producción, como SYSTEM en el PDB
+-- (desde ~/proyecto, con un respaldo hecho antes: ops/respaldo.sh):
+--   docker compose cp back/db/migraciones/2026-11-04_auditoria.sql db:/tmp/migracion.sql
+--   docker compose exec db sh -c 'sqlplus -s system/"$ORACLE_PASSWORD"@localhost/FREEPDB1 @/tmp/migracion.sql'
 --
 -- Qué hace:
 --   1. Crea la bitácora AUDITORIA_ADMIN (criterio 6.7.9) con sus permisos de solo inserción.
---   2. Cambia las contraseñas de los usuarios de base de datos que estaban publicadas (NC-05).
---   3. Desactiva las actividades que no tienen reglas de puntuación vigentes (caso «Dyo»).
+--   2. Desactiva las actividades que no tienen reglas de puntuación vigentes (caso «Dyo»).
+--
+-- Las claves de los usuarios KINET_* de producción NO son las de kinet_bd.sql: init-db.sh las reemplaza por
+-- las del .env al instalar. Si alguna vez hay que rotarlas, ver docs/RESPALDO.md («Rotar claves»).
 -- =====================================================================
 SET DEFINE OFF
 WHENEVER SQLERROR EXIT FAILURE
@@ -38,12 +39,7 @@ GRANT SELECT, INSERT ON kinet_owner.AUDITORIA_ADMIN TO rol_kinet_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.AUDITORIA_ADMIN TO rol_kinet_admin;
 CREATE OR REPLACE SYNONYM kinet_admin.AUDITORIA_ADMIN FOR kinet_owner.AUDITORIA_ADMIN;
 
--- 2. Contraseñas nuevas (las anteriores estaban en el README del repositorio)
-ALTER USER kinet_app    IDENTIFIED BY "<NUEVA_CLAVE_KINET_APP>";
-ALTER USER kinet_admin  IDENTIFIED BY "<NUEVA_CLAVE_KINET_ADMIN>";
-ALTER USER kinet_reader IDENTIFIED BY "<NUEVA_CLAVE_KINET_READER>";
-
--- 3. Actividades activas sin reglas vigentes: se desactivan (el jugador no ganaría XP con ellas)
+-- 2. Actividades activas sin reglas vigentes: se desactivan (el jugador no ganaría XP con ellas)
 UPDATE kinet_owner.TIPO_ACTIVIDAD t
 SET    t.estado = 'INACTIVA'
 WHERE  t.estado = 'ACTIVA'
@@ -54,5 +50,5 @@ AND    NOT EXISTS (SELECT 1 FROM kinet_owner.REGLA_PUNTUACION r
 COMMIT;
 
 ALTER SESSION SET CURRENT_SCHEMA = system;
-PROMPT === Migración 2026-11-04 aplicada: bitácora creada, contraseñas cambiadas, actividades sin reglas desactivadas ===
+PROMPT === Migración 2026-11-04 aplicada: bitácora creada, actividades sin reglas desactivadas ===
 EXIT

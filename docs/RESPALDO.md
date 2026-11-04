@@ -70,3 +70,19 @@ Resultado esperado: todas las tablas con `OK`. Se guarda la salida como evidenci
 ## 5. Si se pierde el servidor completo
 
 Crear una instancia nueva con `DESPLIEGUE.md`, sección 3. Restaurar el respaldo más reciente de S3 o del equipo del responsable (sección 4) y apuntar la IP elástica a la instancia nueva. El dominio de DuckDNS no cambia.
+
+## 6. Rotar claves (si se exponen)
+
+1. Generar claves nuevas: `openssl rand -hex 32`.
+2. Cambiarlas en Oracle:
+   ```bash
+   docker compose exec db sh -c 'sqlplus -s system/"$ORACLE_PASSWORD"@localhost/FREEPDB1' <<'SQL'
+   ALTER USER kinet_app IDENTIFIED BY "<nueva>";
+   ALTER USER kinet_admin IDENTIFIED BY "<nueva>";
+   ALTER USER kinet_reader IDENTIFIED BY "<nueva>";
+   EXIT
+   SQL
+   ```
+3. Poner las mismas en `~/proyecto/.env` y reiniciar el backend: `docker compose up -d backend`.
+4. Para el secreto JWT basta con cambiar `KINET_JWT_SECRET` en el `.env` y reiniciar el backend: todas las sesiones abiertas se cierran.
+5. Registrar el cambio en Jira como incidente (qué se expuso, cuándo y cuándo se rotó).

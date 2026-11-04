@@ -1,0 +1,46 @@
+# Copia de la configuración real del servidor (~/proyecto/docker-compose.yml).
+# Va en ~/proyecto/ junto a las carpetas back/ (repo kinet-backend) y front/ (repo kinet-frontend).
+# Los valores salen del .env del servidor (ver ops/.env.example); aquí no hay ningún secreto.
+services:
+  db:
+    image: gvenzl/oracle-free:23-slim
+    restart: unless-stopped
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD}
+    ports:
+      - "127.0.0.1:1521:1521"   # solo desde el propio servidor
+    volumes:
+      - oradata:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 20s
+      timeout: 10s
+      retries: 30
+
+  backend:
+    build: ./back/backend
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:oracle:thin:@//db:1521/FREEPDB1
+      DB_USUARIO: kinet_app
+      DB_CONTRASENA: ${KINET_APP_PASSWORD}
+      KINET_JWT_SECRET: ${KINET_JWT_SECRET}
+      KINET_CORS_ORIGENES: https://${PUBLIC_HOST}
+      KINET_FRONTEND_URL: https://${PUBLIC_HOST}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_USUARIO: ${MAIL_USUARIO:-}
+      MAIL_CONTRASENA: ${MAIL_CONTRASENA:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./front
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:80"     # solo Caddy llega aquí
+    depends_on:
+      - backend
+
+volumes:
+  oradata:

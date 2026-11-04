@@ -28,15 +28,20 @@ Navegador ──HTTPS──▶ Caddy (puerto 443, certificado Let's Encrypt auto
 
 ## 2. Variables del `.env` del servidor
 
+Plantilla en [`ops/.env.example`](../ops/.env.example). El archivo real vive solo en `~/proyecto/.env` (permisos 600).
+
 | Variable | Uso |
 |---|---|
-| `ORACLE_PASSWORD` | Clave de SYSTEM del contenedor de Oracle (también la usa `ops/respaldo.sh`) |
-| `DB_URL`, `DB_USUARIO`, `DB_CONTRASENA` | Conexión del backend como `KINET_APP` |
+| `ORACLE_PASSWORD` | Clave de SYSTEM del contenedor de Oracle. También la usan `init-db.sh`, `ops/respaldo.sh` y las migraciones |
+| `KINET_APP_PASSWORD` | Clave de `KINET_APP`, el usuario con el que entra el backend (`DB_CONTRASENA` en `docker-compose.yml`) |
+| `KINET_READER_PASSWORD`, `KINET_ADMIN_PASSWORD` | Claves de los usuarios de reportes y del equipo |
 | `KINET_JWT_SECRET` | Secreto de las sesiones, mínimo 32 caracteres. **Sin él la API no arranca** |
-| `KINET_CORS_ORIGENES`, `KINET_FRONTEND_URL` | `https://kinetapp.duckdns.org` |
+| `PUBLIC_HOST` | `kinetapp.duckdns.org`. Arma `KINET_CORS_ORIGENES` y `KINET_FRONTEND_URL` |
 | `MAIL_*` | Correo saliente (pendiente, KAN-50) |
 
-Generar un secreto nuevo: `openssl rand -base64 48`.
+`init-db.sh` reemplaza las claves de desarrollo de `kinet_bd.sql` por las del `.env` al instalar. Por eso las claves de producción nunca fueron las que aparecían en el repositorio.
+
+Generar un secreto o una clave: `openssl rand -hex 32`.
 
 ## 3. Primer despliegue (servidor nuevo)
 
@@ -47,8 +52,9 @@ mkdir -p ~/proyecto && cd ~/proyecto
 git clone git@github-back:f0spin4v/kinet-backend.git back
 git clone git@github-front:f0spin4v/kinet-frontend.git front
 cp back/ops/docker-compose.yml back/ops/init-db.sh .
-nano .env && chmod 600 .env           # ver sección 2
+cp back/ops/.env.example .env && nano .env && chmod 600 .env   # ver sección 2
 sudo cp back/ops/Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+docker compose up -d db && bash init-db.sh   # solo la primera vez: crea usuarios, tablas y datos
 docker compose up -d --build
 ```
 
