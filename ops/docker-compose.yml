@@ -30,6 +30,8 @@ services:
       MAIL_HOST: ${MAIL_HOST:-}
       MAIL_USUARIO: ${MAIL_USUARIO:-}
       MAIL_CONTRASENA: ${MAIL_CONTRASENA:-}
+      # Gmail exige que el remitente sea la misma cuenta que envía
+      KINET_CORREO_REMITENTE: ${KINET_CORREO_REMITENTE:-no-responder@kinet.app}
     depends_on:
       db:
         condition: service_healthy
