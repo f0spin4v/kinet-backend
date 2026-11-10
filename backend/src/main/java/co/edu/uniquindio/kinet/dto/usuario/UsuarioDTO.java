@@ -1,5 +1,6 @@
 package co.edu.uniquindio.kinet.dto.usuario;
 
+import co.edu.uniquindio.kinet.services.UsuarioService;
 import co.edu.uniquindio.kinet.model.PerfilJugador;
 import co.edu.uniquindio.kinet.model.Usuario;
 import java.time.LocalDate;
@@ -19,7 +20,9 @@ public record UsuarioDTO(
         String nivelHabilidad,
         LocalDateTime fechaRegistro,
         /** false si la cuenta la creó el administrador y el titular aún no acepta la política (Ley 1581). */
-        boolean aceptaPolitica
+        boolean aceptaPolitica,
+        /** true para titulares de 14 a 17 años (RN-33): su cuenta depende de la autorización del representante. */
+        boolean menorDeEdad
 ) {
     public static UsuarioDTO de(Usuario usuario, String nivelHabilidad) {
         PerfilJugador perfil = usuario.getPerfil();
@@ -28,6 +31,7 @@ public record UsuarioDTO(
                 perfil == null ? null : perfil.getGamertag(),
                 perfil == null ? null : perfil.getAvatarUrl(),
                 perfil == null ? null : perfil.getFechaNacimiento(),
-                nivelHabilidad, usuario.getFechaRegistro(), Boolean.TRUE.equals(usuario.getAceptaPoliticaDatos()));
+                nivelHabilidad, usuario.getFechaRegistro(), Boolean.TRUE.equals(usuario.getAceptaPoliticaDatos()),
+                perfil != null && UsuarioService.esMenor(perfil.getFechaNacimiento()));
     }
 }

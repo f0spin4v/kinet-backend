@@ -35,4 +35,7 @@ public interface NotificacionRepository extends JpaRepository<Notificacion, Long
 
     @Query("SELECT CAST(n.estadoEnvio AS string) AS clave, COUNT(n) AS total FROM Notificacion n GROUP BY n.estadoEnvio")
     List<Conteo> contarPorEstadoEnvio();
+
+    /** Para no repetir el mismo aviso: ¿ya recibió uno con este título desde la fecha dada? */
+    boolean existsByUsuarioIdAndTituloAndFechaCreacionAfter(Long idUsuario, String titulo, LocalDateTime desde);
 }

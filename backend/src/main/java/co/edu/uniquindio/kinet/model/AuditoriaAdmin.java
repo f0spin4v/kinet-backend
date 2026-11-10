@@ -22,6 +22,8 @@ public class AuditoriaAdmin {
     public static final String CAMBIO_ROL = "CAMBIO_ROL";
     public static final String CREACION_CUENTA = "CREACION_CUENTA";
     public static final String AJUSTE_XP = "AJUSTE_XP";
+    /** Registro o revocación de la autorización del representante legal de un menor (RN-33). */
+    public static final String AUTORIZACION_MENOR = "AUTORIZACION_MENOR";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

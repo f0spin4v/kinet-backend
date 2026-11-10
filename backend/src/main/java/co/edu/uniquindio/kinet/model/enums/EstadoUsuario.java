@@ -1,6 +1,9 @@
 package co.edu.uniquindio.kinet.model.enums;
 
-/** Estado de una cuenta. INACTIVO: la desactivó el jugador. BLOQUEADO: lo decidió soporte. */
+/**
+ * Estado de una cuenta. INACTIVO: la desactivó el jugador. BLOQUEADO: lo decidió soporte.
+ * PENDIENTE: titular de 14 a 17 años que espera la autorización de su representante legal (RN-33).
+ */
 public enum EstadoUsuario {
-    ACTIVO, INACTIVO, BLOQUEADO
+    ACTIVO, INACTIVO, BLOQUEADO, PENDIENTE
 }

@@ -35,6 +35,8 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        // RN-33: el representante legal responde el enlace del correo sin tener cuenta
+                        .requestMatchers(HttpMethod.POST, "/api/autorizaciones/consulta", "/api/autorizaciones/respuesta").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         // monitoreo: solo el estado de salud es público (sin detalles)

@@ -10,7 +10,7 @@
 -- Contenido:
 --   0. Limpieza (usuarios, roles y perfiles de Kinet; el script se puede repetir)
 --   S. Seguridad: perfiles de contraseña, usuarios y roles de base de datos
---   1. Cuenta y seguridad: ROL, USUARIO, PERFIL_JUGADOR, TOKEN_RECUPERACION
+--   1. Cuenta y seguridad: ROL, USUARIO, PERFIL_JUGADOR, TOKEN_RECUPERACION, AUTORIZACION_MENOR
 --   2. Evaluación de nivel: NIVEL_HABILIDAD, PREGUNTA_EVALUACION, OPCION_EVALUACION,
 --      EVALUACION_USUARIO, RESPUESTA_EVALUACION
 --   3. Actividad y puntuación: TIPO_ACTIVIDAD, REGLA_PUNTUACION, NIVEL_PROGRESION,
@@ -33,7 +33,8 @@
 --   KINET_APP     el backend. Lee y escribe datos, pero no crea ni borra tablas. MOVIMIENTO_XP e
 --                 HISTORIAL_RANGO son de solo inserción: el historial no se puede editar ni borrar.
 --   KINET_READER  reportes. Solo lectura y sin acceso a credenciales ni datos personales
---                 (USUARIO, PERFIL_JUGADOR, TOKEN_RECUPERACION, EVIDENCIA_ENTRENAMIENTO); usa V_USUARIO_PUBLICO.
+--                 (USUARIO, PERFIL_JUGADOR, TOKEN_RECUPERACION, AUTORIZACION_MENOR, EVIDENCIA_ENTRENAMIENTO);
+--                 usa V_USUARIO_PUBLICO.
 --   KINET_ADMIN   administrador funcional de los datos (lectura y escritura sobre todo el esquema).
 --
 -- Correcciones respecto al diagrama original (detalle en docs/MIGRACION_V2.md):
@@ -164,7 +165,8 @@ CREATE TABLE USUARIO (
     CONSTRAINT pk_usuario PRIMARY KEY (id_usuario),
     CONSTRAINT uq_usuario_correo UNIQUE (correo),
     CONSTRAINT fk_usuario_rol FOREIGN KEY (id_rol) REFERENCES ROL (id_rol),
-    CONSTRAINT ck_usuario_estado CHECK (estado IN ('ACTIVO', 'INACTIVO', 'BLOQUEADO')),
+    -- PENDIENTE: titular de 14 a 17 años que espera la autorización de su representante legal (RN-33)
+    CONSTRAINT ck_usuario_estado CHECK (estado IN ('ACTIVO', 'INACTIVO', 'BLOQUEADO', 'PENDIENTE')),
     CONSTRAINT ck_usuario_acepta CHECK (acepta_politica_datos IN ('S', 'N')),
     CONSTRAINT ck_usuario_politica CHECK (acepta_politica_datos = 'N' OR fecha_acepta_politica IS NOT NULL),
     CONSTRAINT ck_usuario_correo_min CHECK (correo = LOWER(correo))
@@ -201,6 +203,36 @@ CREATE TABLE TOKEN_RECUPERACION (
     CONSTRAINT ck_token_fechas CHECK (fecha_expiracion > fecha_creacion)
 );
 CREATE INDEX ix_token_usuario ON TOKEN_RECUPERACION (id_usuario);
+
+-- RN-33: autorización del representante legal de un titular de 14 a 17 años (Ley 1581 de 2012, art. 7;
+-- Decreto 1377 de 2013, art. 12). Una por cuenta. Del enlace del correo solo se guarda el SHA-256.
+-- canal CORREO: respondió el enlace; ADMINISTRADOR: el equipo registró un documento firmado (soporte).
+CREATE TABLE AUTORIZACION_MENOR (
+    id_autorizacion       NUMBER(10) GENERATED ALWAYS AS IDENTITY,
+    id_usuario            NUMBER(10) NOT NULL,
+    nombre_representante  VARCHAR2(160) NOT NULL,
+    correo_representante  VARCHAR2(120) NOT NULL,
+    parentesco            VARCHAR2(12) NOT NULL,
+    estado                VARCHAR2(10) DEFAULT 'PENDIENTE' NOT NULL,
+    canal                 VARCHAR2(13),
+    token_hash            VARCHAR2(64),
+    fecha_solicitud       TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
+    fecha_expiracion      TIMESTAMP NOT NULL,
+    fecha_respuesta       TIMESTAMP,
+    soporte               VARCHAR2(300),
+    id_admin              NUMBER(10),
+    CONSTRAINT pk_autorizacion_menor PRIMARY KEY (id_autorizacion),
+    CONSTRAINT uq_autorizacion_usuario UNIQUE (id_usuario),
+    CONSTRAINT uq_autorizacion_token UNIQUE (token_hash),
+    CONSTRAINT fk_autorizacion_usuario FOREIGN KEY (id_usuario) REFERENCES USUARIO (id_usuario) ON DELETE CASCADE,
+    CONSTRAINT fk_autorizacion_admin FOREIGN KEY (id_admin) REFERENCES USUARIO (id_usuario) ON DELETE SET NULL,
+    CONSTRAINT ck_autorizacion_parentesco CHECK (parentesco IN ('MADRE', 'PADRE', 'TUTOR_LEGAL')),
+    CONSTRAINT ck_autorizacion_estado CHECK (estado IN ('PENDIENTE', 'AUTORIZADA', 'RECHAZADA', 'REVOCADA')),
+    CONSTRAINT ck_autorizacion_canal CHECK (canal IN ('CORREO', 'ADMINISTRADOR')),
+    CONSTRAINT ck_autorizacion_respuesta CHECK (estado = 'PENDIENTE' OR fecha_respuesta IS NOT NULL),
+    CONSTRAINT ck_autorizacion_soporte CHECK (canal IS NULL OR canal = 'CORREO' OR soporte IS NOT NULL),
+    CONSTRAINT ck_autorizacion_correo_min CHECK (correo_representante = LOWER(correo_representante))
+);
 
 
 -- =====================================================================
@@ -888,7 +920,8 @@ CREATE TABLE AUDITORIA_ADMIN (
     valor_nuevo         VARCHAR2(200),
     fecha_accion        TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
     CONSTRAINT pk_auditoria_admin PRIMARY KEY (id_auditoria),
-    CONSTRAINT ck_auditoria_accion CHECK (accion IN ('CAMBIO_ESTADO', 'CAMBIO_ROL', 'CREACION_CUENTA', 'AJUSTE_XP'))
+    CONSTRAINT ck_auditoria_accion CHECK (accion IN ('CAMBIO_ESTADO', 'CAMBIO_ROL', 'CREACION_CUENTA', 'AJUSTE_XP',
+                                                  'AUTORIZACION_MENOR'))
 );
 CREATE INDEX ix_auditoria_fecha ON AUDITORIA_ADMIN (fecha_accion);
 CREATE INDEX ix_auditoria_afectado ON AUDITORIA_ADMIN (id_usuario_afectado);
@@ -1698,7 +1731,7 @@ BEGIN
         EXECUTE IMMEDIATE 'GRANT SELECT, INSERT, UPDATE, DELETE ON kinet_owner.' || t.table_name || ' TO rol_kinet_admin';
         -- reportes: sin credenciales ni datos personales
         IF t.table_name NOT IN ('USUARIO', 'PERFIL_JUGADOR', 'TOKEN_RECUPERACION', 'EVIDENCIA_ENTRENAMIENTO',
-                                'AUDITORIA_ADMIN') THEN
+                                'AUDITORIA_ADMIN', 'AUTORIZACION_MENOR') THEN
             EXECUTE IMMEDIATE 'GRANT SELECT ON kinet_owner.' || t.table_name || ' TO rol_kinet_reader';
         END IF;
     END LOOP;

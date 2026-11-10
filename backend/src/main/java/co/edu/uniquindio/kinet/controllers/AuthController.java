@@ -1,7 +1,9 @@
 package co.edu.uniquindio.kinet.controllers;
 
 import co.edu.uniquindio.kinet.dto.auth.*;
+import co.edu.uniquindio.kinet.dto.autorizacion.ReenvioAutorizacionDTO;
 import co.edu.uniquindio.kinet.services.AuthService;
+import co.edu.uniquindio.kinet.services.AutorizacionMenorService;
 import co.edu.uniquindio.kinet.dto.MensajeDTO;
 import co.edu.uniquindio.kinet.dto.ResponseDTO;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,6 +24,7 @@ import java.util.List;
 public class AuthController {
 
     private final AuthService authService;
+    private final AutorizacionMenorService autorizacionService;
 
     @Operation(summary = "Crear una cuenta de jugador")
     @PostMapping("/registro")
@@ -48,5 +51,13 @@ public class AuthController {
     public ResponseEntity<ResponseDTO<MensajeDTO>> restablecer(@Valid @RequestBody RestablecerContrasenaDTO dto) {
         authService.restablecerContrasena(dto);
         return ResponseEntity.ok(new ResponseDTO<>(false, new MensajeDTO("Tu contraseña fue restablecida.")));
+    }
+
+    @Operation(summary = "Menor de 18: enviar otra vez el correo de autorización a su representante")
+    @PostMapping("/autorizacion/reenvio")
+    public ResponseEntity<ResponseDTO<MensajeDTO>> reenviarAutorizacion(@Valid @RequestBody ReenvioAutorizacionDTO dto) {
+        autorizacionService.reenviar(dto.correo());
+        return ResponseEntity.ok(new ResponseDTO<>(false,
+                new MensajeDTO("Si tu cuenta espera la autorización, le enviamos de nuevo el correo a tu representante.")));
     }
 }

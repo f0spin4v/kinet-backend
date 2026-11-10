@@ -66,6 +66,7 @@ public abstract class PruebaIntegracion {
     @Autowired protected HistorialRangoRepository historialRangoRepository;
     @Autowired protected CompetenciaRepository competenciaRepository;
     @Autowired protected AuditoriaAdminRepository auditoriaRepository;
+    @Autowired protected co.edu.uniquindio.kinet.repositories.AutorizacionMenorRepository autorizacionRepository;
     @Autowired protected co.edu.uniquindio.kinet.security.LimiteIntentosLogin limiteIntentos;
 
     @BeforeEach
@@ -89,6 +90,7 @@ public abstract class PruebaIntegracion {
         entrenamientoRepository.deleteAll();
         evaluacionRepository.deleteAll();
         tokenRepository.deleteAll();
+        autorizacionRepository.deleteAll();
         perfilRepository.deleteAll();
         usuarioRepository.deleteAll();
         // catálogos que algunas pruebas modifican

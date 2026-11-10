@@ -69,4 +69,7 @@ public interface EntrenamientoRepository extends JpaRepository<Entrenamiento, Lo
             """)
     List<Conteo> minutosPorActividadDesde(@Param("estado") EstadoValidacion estado,
                                           @Param("desde") LocalDateTime desde);
+
+    /** Sesiones esperando revisión que terminaron antes del límite (aviso de 48 h al entrenador). */
+    long countByEstadoValidacionAndFechaHoraFinBefore(EstadoValidacion estado, LocalDateTime limite);
 }
