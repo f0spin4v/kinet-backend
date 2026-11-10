@@ -11,6 +11,7 @@ import co.edu.uniquindio.kinet.model.TokenRecuperacion;
 import co.edu.uniquindio.kinet.model.Usuario;
 import co.edu.uniquindio.kinet.model.enums.CanalNotificacion;
 import co.edu.uniquindio.kinet.model.enums.EstadoUsuario;
+import co.edu.uniquindio.kinet.model.enums.Parentesco;
 import co.edu.uniquindio.kinet.model.enums.TipoNotificacion;
 import co.edu.uniquindio.kinet.repositories.PerfilJugadorRepository;
 import co.edu.uniquindio.kinet.repositories.RolRepository;
@@ -51,6 +52,7 @@ public class AuthService {
     private final NotificacionService notificacionService;
     private final EmailService emailService;
     private final LimiteIntentosLogin limiteIntentos;
+    private final AutorizacionMenorService autorizacionService;
 
     @Value("${kinet.recuperacion.expiracion-minutos}")
     private long minutosRecuperacion;
@@ -66,6 +68,11 @@ public class AuthService {
             throw new ConflictoException("Ese gamertag ya está en uso. Elige otro.");
         }
         UsuarioService.validarEdad(registroDTO.fechaNacimiento());
+        // RN-33: de 14 a 17 años la cuenta espera la autorización del representante legal
+        boolean menor = UsuarioService.esMenor(registroDTO.fechaNacimiento());
+        if (menor) {
+            validarRepresentante(registroDTO, correo);
+        }
         Rol jugador = rolRepository.findByNombre(Rol.JUGADOR)
                 .orElseThrow(() -> new IllegalStateException("Falta el rol JUGADOR en la base de datos."));
 
@@ -75,8 +82,9 @@ public class AuthService {
                 .apellidos(registroDTO.apellidos().trim())
                 .correo(correo)
                 .passwordHash(passwordEncoder.encode(registroDTO.contrasena()))
-                .aceptaPoliticaDatos(true)
-                .fechaAceptaPolitica(LocalDate.now())
+                .estado(menor ? EstadoUsuario.PENDIENTE : EstadoUsuario.ACTIVO)
+                .aceptaPoliticaDatos(!menor)
+                .fechaAceptaPolitica(menor ? null : LocalDate.now())
                 .build();
         usuario.setPerfil(PerfilJugador.builder()
                 .usuario(usuario)
@@ -84,7 +92,24 @@ public class AuthService {
                 .fechaNacimiento(registroDTO.fechaNacimiento())
                 .build());
         usuarioRepository.save(usuario);
+        if (menor) {
+            autorizacionService.solicitar(usuario, registroDTO.nombreRepresentante(), registroDTO.correoRepresentante(),
+                    Parentesco.valueOf(registroDTO.parentesco()));
+            // sin token: la cuenta no se puede usar hasta que el representante autorice
+            return new SesionDTO(null, usuarioService.toDTO(usuario));
+        }
         return sesion(usuario);
+    }
+
+    private static void validarRepresentante(RegistroDTO dto, String correoMenor) {
+        if (dto.nombreRepresentante() == null || dto.nombreRepresentante().isBlank()
+                || dto.correoRepresentante() == null || dto.correoRepresentante().isBlank() || dto.parentesco() == null) {
+            throw new ReglaNegocioException("Como tienes menos de 18 años, escribe el nombre, el correo y el parentesco "
+                    + "de tu representante legal (madre, padre o tutor).");
+        }
+        if (UsuarioService.normalizar(dto.correoRepresentante()).equals(correoMenor)) {
+            throw new ReglaNegocioException("El correo de tu representante legal debe ser distinto al tuyo.");
+        }
     }
 
     @Transactional(readOnly = true)
@@ -103,6 +128,10 @@ public class AuthService {
         limiteIntentos.limpiar(correo);
         if (usuario.getEstado() == EstadoUsuario.BLOQUEADO) {
             throw new AccesoDenegadoException("Tu cuenta está bloqueada. Contacta a soporte.");
+        }
+        if (usuario.getEstado() == EstadoUsuario.PENDIENTE) {
+            throw new AccesoDenegadoException("Tu cuenta espera la autorización de tu representante legal. Pídele que "
+                    + "revise el correo que le enviamos o solicita que se lo reenviemos.");
         }
         if (usuario.getEstado() == EstadoUsuario.INACTIVO) {
             throw new AccesoDenegadoException("Tu cuenta está inactiva. Contacta a soporte para reactivarla.");

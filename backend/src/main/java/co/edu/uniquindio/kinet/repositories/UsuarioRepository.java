@@ -63,4 +63,8 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
 
     @Query("SELECT u.rol.nombre AS clave, COUNT(u) AS total FROM Usuario u GROUP BY u.rol.nombre")
     List<Conteo> contarPorRol();
+
+    /** Cuentas de un rol en un estado (por ejemplo, los entrenadores activos). */
+    @Query("SELECT u FROM Usuario u JOIN FETCH u.rol r WHERE r.nombre = :rol AND u.estado = :estado")
+    List<Usuario> conRolYEstado(@Param("rol") String rol, @Param("estado") EstadoUsuario estado);
 }

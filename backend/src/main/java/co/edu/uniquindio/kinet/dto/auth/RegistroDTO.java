@@ -22,11 +22,19 @@ public record RegistroDTO(
         @Size(min = 3, max = 30, message = "El gamertag debe tener entre 3 y 30 caracteres.")
         @Pattern(regexp = "^[A-Za-z0-9_]+$", message = "El gamertag solo puede tener letras, números y guion bajo.")
         String gamertag,
-        // Ley 1581 de 2012: se pide para verificar que el titular sea mayor de edad (ver UsuarioService.EDAD_MINIMA)
+        // Ley 1581 de 2012: desde 14 años; de 14 a 17 se pide el representante legal (ver UsuarioService.EDAD_MINIMA)
         @NotNull(message = "Escribe tu fecha de nacimiento.")
         @Past(message = "La fecha de nacimiento debe estar en el pasado.")
         LocalDate fechaNacimiento,
         @AssertTrue(message = "Debes aceptar la política de tratamiento de datos.")
-        boolean aceptaPolitica
+        boolean aceptaPolitica,
+        // Solo para titulares de 14 a 17 años (RN-33): quién autoriza el tratamiento de sus datos
+        @Size(max = 160, message = "El nombre del representante no puede tener más de 160 caracteres.")
+        String nombreRepresentante,
+        @Email(message = "El correo del representante no tiene un formato válido.")
+        @Size(max = 120, message = "El correo del representante no puede tener más de 120 caracteres.")
+        String correoRepresentante,
+        @Pattern(regexp = "^(MADRE|PADRE|TUTOR_LEGAL)$", message = "El parentesco debe ser MADRE, PADRE o TUTOR_LEGAL.")
+        String parentesco
 ) {
 }

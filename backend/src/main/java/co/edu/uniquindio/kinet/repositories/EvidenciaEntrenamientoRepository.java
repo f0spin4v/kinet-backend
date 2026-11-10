@@ -52,4 +52,7 @@ public interface EvidenciaEntrenamientoRepository extends JpaRepository<Evidenci
     /** Estado de la evidencia de cada entrenamiento de la lista (sin cargar imágenes). */
     @Query("SELECT ev.entrenamiento.id, ev.estadoRevision FROM EvidenciaEntrenamiento ev WHERE ev.entrenamiento.id IN :ids")
     List<Object[]> estadosDe(@Param("ids") Collection<Long> idsEntrenamiento);
+
+    /** Evidencias sin revisar subidas antes del límite (aviso de 48 h al entrenador). */
+    long countByEstadoRevisionAndFechaSubidaBefore(EstadoEvidencia estado, java.time.LocalDateTime limite);
 }

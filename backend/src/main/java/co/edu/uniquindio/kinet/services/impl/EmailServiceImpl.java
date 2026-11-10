@@ -57,6 +57,34 @@ public class EmailServiceImpl implements EmailService {
     }
 
     @Override
+    public void enviarAutorizacionMenor(String correoRepresentante, String nombreRepresentante, String nombreMenor,
+                                        String token) {
+        String enlace = urlFrontend + "/autorizacion-representante?token=" + token;
+        JavaMailSender sender = mailSender.getIfAvailable();
+        if (host == null || host.isBlank() || sender == null) {
+            log.info("[CORREO SIMULADO] Autorización del representante {}: {}", correoRepresentante, enlace);
+            return;
+        }
+        SimpleMailMessage mensaje = new SimpleMailMessage();
+        mensaje.setFrom(remitente);
+        mensaje.setTo(correoRepresentante);
+        mensaje.setSubject("Kinet: " + nombreMenor + " necesita tu autorización");
+        mensaje.setText("Hola " + nombreRepresentante + ",\n\n"
+                + nombreMenor + " se registró en Kinet, una app que convierte la actividad física en un juego, y te "
+                + "indicó como su representante legal.\n\n"
+                + "Como es menor de 18 años, la ley colombiana (Ley 1581 de 2012 y Decreto 1377 de 2013, art. 12) "
+                + "exige tu autorización para tratar sus datos. Su cuenta no se puede usar hasta que respondas.\n\n"
+                + "Abre este enlace para leer qué datos tratamos y autorizar o no (vence en 7 días):\n\n"
+                + enlace + "\n\n"
+                + "Si no conoces a esta persona o no eres su representante legal, ignora este correo.\n\nEquipo Kinet");
+        try {
+            sender.send(mensaje);
+        } catch (MailException e) {
+            log.warn("No se pudo enviar el correo a {}: {}. Enlace: {}", correoRepresentante, e.getMessage(), enlace);
+        }
+    }
+
+    @Override
     public void enviarAviso(String correo, String asunto, String mensaje) {
         JavaMailSender sender = mailSender.getIfAvailable();
         if (host == null || host.isBlank() || sender == null) {

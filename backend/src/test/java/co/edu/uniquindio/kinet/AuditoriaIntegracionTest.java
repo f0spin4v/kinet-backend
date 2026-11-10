@@ -78,12 +78,17 @@ class AuditoriaIntegracionTest extends PruebaIntegracion {
     // ---------- Ley 1581: edad mínima y consentimiento del titular ----------
 
     @Test
-    void unMenorDeEdadNoPuedeRegistrarse() throws Exception {
+    void unMenorDe14NoPuedeRegistrarseYUnoDe17NecesitaASuRepresentante() throws Exception {
         Map<String, Object> datos = datosRegistro("menor@kinet.com", "menor_k");
+        datos.put("fechaNacimiento", LocalDate.now().minusYears(13).toString());
+        post("/api/auth/registro", datos, null)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.respuesta", containsString("mayores de 14")));
+        // RN-33: de 14 a 17 años hace falta el representante legal
         datos.put("fechaNacimiento", LocalDate.now().minusYears(17).toString());
         post("/api/auth/registro", datos, null)
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.respuesta", containsString("mayores de 18")));
+                .andExpect(jsonPath("$.respuesta", containsString("representante legal")));
         assertThat(usuarioRepository.existsByCorreo("menor@kinet.com")).isFalse();
 
         Map<String, Object> sinFecha = datosRegistro("sinfecha@kinet.com", "sin_fecha");

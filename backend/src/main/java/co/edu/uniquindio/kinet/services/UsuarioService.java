@@ -1,5 +1,7 @@
 package co.edu.uniquindio.kinet.services;
 
+import co.edu.uniquindio.kinet.model.enums.EstadoAutorizacion;
+import co.edu.uniquindio.kinet.repositories.AutorizacionMenorRepository;
 import co.edu.uniquindio.kinet.dto.PaginaDTO;
 import co.edu.uniquindio.kinet.dto.usuario.CambiarContrasenaDTO;
 import co.edu.uniquindio.kinet.dto.usuario.EditarPerfilDTO;
@@ -48,15 +50,31 @@ public class UsuarioService {
     private final PasswordEncoder passwordEncoder;
     private final NotificacionService notificacionService;
     private final BitacoraService bitacoraService;
+    private final AutorizacionMenorRepository autorizacionRepository;
 
-    /** Ley 1581 de 2012: Kinet solo admite titulares mayores de edad (no trata datos de menores). */
-    public static final int EDAD_MINIMA = 18;
+    /** RN-33: edad mínima para tener cuenta. De 14 a 17 años se necesita la autorización del representante legal. */
+    public static final int EDAD_MINIMA = 14;
+    /** Mayoría de edad en Colombia: desde aquí el titular autoriza por sí mismo (Ley 1581 de 2012). */
+    public static final int MAYORIA_DE_EDAD = 18;
 
-    /** Rechaza fechas de nacimiento de menores de edad. null pasa: el DTO decide si es obligatoria. */
+    public static int edad(LocalDate fechaNacimiento) {
+        return Period.between(fechaNacimiento, LocalDate.now()).getYears();
+    }
+
+    /** true para titulares de 14 a 17 años. */
+    public static boolean esMenor(LocalDate fechaNacimiento) {
+        return fechaNacimiento != null && edad(fechaNacimiento) < MAYORIA_DE_EDAD;
+    }
+
+    /** Rechaza fechas de nacimiento de menores de 14 años. null pasa: el DTO decide si es obligatoria. */
     public static void validarEdad(LocalDate fechaNacimiento) {
-        if (fechaNacimiento != null && Period.between(fechaNacimiento, LocalDate.now()).getYears() < EDAD_MINIMA) {
-            throw new ReglaNegocioException("Kinet es solo para mayores de " + EDAD_MINIMA + " años.");
+        if (fechaNacimiento != null && edad(fechaNacimiento) < EDAD_MINIMA) {
+            throw new ReglaNegocioException("Kinet es para mayores de " + EDAD_MINIMA + " años.");
         }
+    }
+
+    private boolean tieneAutorizacion(Usuario usuario) {
+        return autorizacionRepository.existsByUsuarioIdAndEstado(usuario.getId(), EstadoAutorizacion.AUTORIZADA);
     }
 
     @Transactional(readOnly = true)
@@ -130,6 +148,10 @@ public class UsuarioService {
             throw new ConflictoException("Ese gamertag ya está en uso. Elige otro.");
         }
         validarEdad(editarDTO.fechaNacimiento());
+        if (esMenor(editarDTO.fechaNacimiento()) && !tieneAutorizacion(usuario)) {
+            throw new ReglaNegocioException("Para titulares menores de 18 años se necesita la autorización de su "
+                    + "representante legal. Escríbenos a soporte.");
+        }
         PerfilJugador perfil = perfilDe(usuario);
         usuario.setNombres(editarDTO.nombres().trim());
         usuario.setApellidos(editarDTO.apellidos().trim());
@@ -181,6 +203,14 @@ public class UsuarioService {
         Usuario usuario = obtenerPorId(idUsuario);
         if (actor.getId().equals(usuario.getId())) {
             throw new ReglaNegocioException("No puedes cambiar el estado de tu propia cuenta.");
+        }
+        if (estado == EstadoUsuario.PENDIENTE) {
+            throw new ReglaNegocioException("El estado PENDIENTE solo lo asigna el registro de un menor de edad.");
+        }
+        if (estado == EstadoUsuario.ACTIVO && usuario.getPerfil() != null
+                && esMenor(usuario.getPerfil().getFechaNacimiento()) && !tieneAutorizacion(usuario)) {
+            throw new ReglaNegocioException("Este titular es menor de edad: registra primero la autorización de su "
+                    + "representante legal.");
         }
         EstadoUsuario anterior = usuario.getEstado();
         usuario.setEstado(estado);
