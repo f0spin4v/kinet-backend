@@ -1,0 +1,72 @@
+# Pruebas de rendimiento de los RNF-01 a RNF-05 (k6), en un ambiente de pruebas aparte de producción:
+# Oracle Free con kinet_bd.sql (datos de prueba) y la API compilada de esta rama, en el mismo job.
+# Los resultados quedan en el resumen del job y como artefacto «rendimiento-rnf».
+name: Backend · rendimiento (RNF-01 a RNF-05)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 7 * * 1'          # lunes 2:00 a.m. (Bogotá)
+  pull_request:
+    branches: [main]
+    paths: ['pruebas/rendimiento/**', '.github/workflows/rendimiento.yml']
+
+jobs:
+  rendimiento:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      oracle:
+        image: gvenzl/oracle-free:23-slim
+        env:
+          ORACLE_PASSWORD: ClaveSoloDePruebas2026
+        ports: ['1521:1521']
+        options: >-
+          --health-cmd healthcheck.sh --health-interval 15s --health-timeout 10s --health-retries 40
+    env:
+      API: http://localhost:8080/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21', cache: maven }
+
+      - name: Cargar la base de datos de pruebas (kinet_bd.sql)
+        run: |
+          docker cp kinet_bd.sql ${{ job.services.oracle.id }}:/tmp/kinet_bd.sql
+          docker exec -e NLS_LANG=AMERICAN_AMERICA.AL32UTF8 ${{ job.services.oracle.id }} \
+            sh -c 'sqlplus -s system/"$ORACLE_PASSWORD"@localhost/FREEPDB1 @/tmp/kinet_bd.sql' | tail -5
+
+      - name: Compilar la API
+        working-directory: backend
+        run: mvn -B -ntp -q package -DskipTests
+
+      - name: Levantar la API
+        run: |
+          nohup java -Xmx512m -jar backend/target/kinet-backend-*.jar > api.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/api/sistema/health && break; sleep 3
+          done
+          curl -sf http://localhost:8080/api/sistema/health
+        env:
+          DB_URL: jdbc:oracle:thin:@//localhost:1521/FREEPDB1
+          DB_USUARIO: kinet_app
+          DB_CONTRASENA: KinetApp2026
+          KINET_JWT_SECRET: secreto-solo-para-el-ambiente-de-pruebas-de-rendimiento-2026
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Pruebas de rendimiento (k6)
+        id: k6
+        run: |
+          mkdir -p resultados
+          k6 run --quiet pruebas/rendimiento/rnf.js || echo "::warning::Algún umbral de RNF no se cumplió (ver el resumen)"
+          cat resultados/rnf.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar resultados
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendimiento-rnf
+          path: |
+            resultados/
+            api.log
